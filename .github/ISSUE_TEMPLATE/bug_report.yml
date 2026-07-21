@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a reproducible problem with Taskbar Media Presence.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve Taskbar Media Presence.
+  - type: input
+    id: windows-version
+    attributes:
+      label: Windows version
+      description: Run `winver` and include the version and OS build.
+      placeholder: Windows 11 24H2, build 26100.x
+    validations:
+      required: true
+  - type: input
+    id: windhawk-version
+    attributes:
+      label: Windhawk and mod versions
+      placeholder: Windhawk 1.7.3, Taskbar Media Presence 0.10.1
+    validations:
+      required: true
+  - type: input
+    id: media-app
+    attributes:
+      label: Media application
+      placeholder: MusicBee, Windows Media Player, Spotify, VLC, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Explain the problem and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start ...
+        2. Open ...
+        3. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Windhawk logs or screenshots
+      description: Remove personal information before attaching logs or screenshots.
+      render: text

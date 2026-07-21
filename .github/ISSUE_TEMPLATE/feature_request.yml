@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest an improvement or a new compatible media application.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What would you like to accomplish?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe how the feature should look and work.
+    validations:
+      required: true
+  - type: input
+    id: media-app
+    attributes:
+      label: Related media application
+      description: Leave blank when the request is not application-specific.

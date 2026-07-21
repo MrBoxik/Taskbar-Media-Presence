@@ -1,0 +1,7 @@
+/build/
+/MusicBeeVolumeBridge/bin/
+/MusicBeeVolumeBridge/obj/
+/.vs/
+*.user
+*.suo
+*.log
