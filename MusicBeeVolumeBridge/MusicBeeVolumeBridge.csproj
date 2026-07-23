@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
-    <AssemblyName>mb_TaskbarVolumeBridge</AssemblyName>
+    <AssemblyName>mb_TaskbarMediaPresence</AssemblyName>
     <RootNamespace>MusicBeePlugin</RootNamespace>
     <PlatformTarget>x86</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
@@ -9,9 +9,26 @@
     <UseWindowsForms>true</UseWindowsForms>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <Deterministic>true</Deterministic>
+    <Optimize>true</Optimize>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <Authors>MrBoxik</Authors>
+    <Company>MrBoxik</Company>
+    <AssemblyTitle>Taskbar Media Presence MusicBee Companion</AssemblyTitle>
+    <Product>Taskbar Media Presence MusicBee Companion</Product>
+    <Description>MusicBee media-session and internal-volume companion for Taskbar Media Presence.</Description>
+    <Copyright>Copyright (c) MrBoxik</Copyright>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="$(MusicBeeSdkPath)" Link="MusicBeeInterface.cs" />
+    <Reference Include="Windows">
+      <HintPath>$(WindowsWinMdPath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Runtime.WindowsRuntime">
+      <HintPath>$(WindowsRuntimePath)</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 </Project>

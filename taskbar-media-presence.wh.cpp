@@ -2,32 +2,37 @@
 // @id              taskbar-media-presence
 // @name            Taskbar Media Presence
 // @description     Taskbar music controls with album art, per-app volume, multi-monitor placement, and Discord Rich Presence.
-// @version         0.10.1
-// @author          MrBoxik; based on Taskbar Fluent Media Player by Salyts
+// @version         1.0.0
+// @author          MrBoxik
 // @github          https://github.com/MrBoxik
 // @homepage        https://github.com/MrBoxik/Taskbar-Media-Presence
+// @donateUrl       https://buymeacoffee.com/mrboxik
+// @license         MIT
 // @include         explorer.exe
+// @architecture    x86-64
 // @compilerOptions -lole32 -loleaut32 -lruntimeobject -lversion -luuid -luser32 -lwindowsapp -lshell32 -lgdi32 -lshlwapi -lwindowscodecs -ldwmapi -lshcore -lksuser -lcomctl32 -lwinhttp
 // ==/WindhawkMod==
 
 // ==WindhawkModReadme==
 /*
-# Taskbar Media Presence 0.10.1
+# Taskbar Media Presence 1.0.0
 
 A compact Windows 11 taskbar player for any application that publishes a Windows media session.
 
 ## Highlights
 
 - Album art, title, artist, Shuffle, Repeat, Previous, Play/Pause, Next, and per-app volume.
-- MusicBee internal-volume control through the included optional companion plugin.
-- Selected-monitor or all-monitor placement with safe taskbar-space reservation.
+- A single optional MusicBee companion adds its Windows media session and exact internal-volume control.
+- Selected-monitor or all-monitor placement with reserved presets and custom overlay anchors.
 - One-way title marquee, ellipsis, and bounce modes.
 - Transparent widget and transparent Windows taskbar options.
-- Built-in Discord Rich Presence with progress and matched online artwork.
+- Opt-in Discord Rich Presence with progress and matched online artwork.
 
 ## Compatibility
 
-The player must expose a GSMTC/SMTC media session. Shuffle and Repeat appear disabled when the media application does not support them. MusicBee needs `mb_MediaControl`/SMTC for media controls and the Taskbar Media Presence Volume Bridge for its internal volume slider. Other players use their Windows per-application audio session.
+The player must expose a GSMTC/SMTC media session. Shuffle and Repeat appear disabled when the media application does not support them. MusicBee users can download the project-owned [`mb_TaskbarMediaPresence.dll`](https://github.com/MrBoxik/Taskbar-Media-Presence/releases/latest/download/mb_TaskbarMediaPresence.dll); close MusicBee, remove the older `mb_MediaControl.dll` and `mb_TaskbarVolumeBridge.dll`, install the new DLL from **Preferences > Plugins > Add Plugin**, and restart MusicBee. Other players work directly through their Windows media and per-application audio sessions.
+
+Discord publishing is disabled by default. If enabled, the mod talks only to the local Discord desktop client. Optional online cover lookup sends the selected track title, artist, and album to Apple Music and Deezer, then MusicBrainz/Cover Art Archive only when needed; it can be disabled independently.
 
 ## Links
 
@@ -56,11 +61,11 @@ Created and maintained by **[MrBoxik](https://github.com/MrBoxik)**. Based on **
       $description: Used in Only selected monitor mode. 1 is primary; 2 and above are secondary taskbars ordered left to right.
     - positionPreset: "apps"
       $name: Position preset
-      $description: Next to apps, Left, and Right reserve taskbar space. Middle is an overlay. Choose Custom to use the detailed anchor and offset below.
+      $description: Next to apps, Left, and Right reserve taskbar space. Middle uses the free far-left area when Windows buttons are centered, or a center overlay when Windows buttons are left aligned. Choose Custom for a detailed anchor and offset.
       $options:
       - "left": "Left side before Start (no app overlap)"
       - "apps": "Immediately after taskbar applications (no overlap)"
-      - "middle": "Middle of taskbar (overlay)"
+      - "middle": "Adaptive middle / free far-left"
       - "right": "Right side before system tray (no app overlap)"
       - "custom": "Custom anchor"
     - position: "taskbar_after_apps"
@@ -187,7 +192,6 @@ Created and maintained by **[MrBoxik](https://github.com/MrBoxik)**. Based on **
       - forward: Forward 5s
       - shuffle: Toggle Shuffle
       - repeat: Toggle Repeat
-      - switch_sessions: Switch Sessions
     - mediaButtonsMargin: "2 2"
       $name: Media buttons margin (left right)
     - buttonSize: 28
@@ -452,6 +456,11 @@ Created and maintained by **[MrBoxik](https://github.com/MrBoxik)**. Based on **
   $name: Appearance
 
 - BehaviorSettings:
+  - MediaSourceSettings:
+    - preferredApp: ""
+      $name: Preferred media application
+      $description: Leave empty to follow the actively playing Windows media session. To pin the widget and Discord presence to one player, select it from the widget's right-click Media source menu, or enter its Windows media-session app ID here.
+    $name: Media source
   - disableAlbumArtClick: false
     $name: Let clicks pass through album art
     $description: When enabled, the album art itself does not capture mouse clicks.
@@ -476,11 +485,9 @@ Created and maintained by **[MrBoxik](https://github.com/MrBoxik)**. Based on **
           $name: Action
           $options:
           - none:            Nothing
-          - switch_session:  Switch active media session
           - play_pause:      Play/Pause
           - next_track:      Next track
           - prev_track:      Previous track
-          - stop:            Stop playback
           - rewind_5s:       Rewind 5s
           - forward_5s:      Forward 5s
           - toggle_shuffle:  Toggle Shuffle
@@ -514,11 +521,10 @@ Created and maintained by **[MrBoxik](https://github.com/MrBoxik)**. Based on **
           - none:                      Nothing
           - "switch_tracks":           "Switch tracks"
           - "switch_tracks_inverted":  "Switch tracks (inverted)"
-          - "switch_sessions":         "Switch sessions"
           - "app_sound":               "Change app sound volume"
       - - object: album_art
         - click: mouse_wheel
-        - action: switch_sessions
+        - action: none
     $name: Mouse-wheel actions
   - hideWhenNoMedia: true
     $name: Hide when no media is playing
@@ -536,20 +542,20 @@ Created and maintained by **[MrBoxik](https://github.com/MrBoxik)**. Based on **
   $name: Animation
 
 - DiscordPresenceSettings:
-  - enabled: true
+  - enabled: false
     $name: Publish Discord Rich Presence
-    $description: Publishes the current song directly to the running Discord desktop app. The project Application ID is included below and can be replaced.
+    $description: Disabled by default. When enabled, publishes the selected song directly to the running Discord desktop app. The project Application ID is included below and can be replaced.
   - applicationId: "1528896038163710112"
     $name: Discord Application ID
     $description: The Taskbar Media Presence application ID is included by default. You can replace it with another numeric Application ID. This value is public, not a secret.
   - showPaused: true
     $name: Show paused songs
   - activityName: "{title}"
-    $name: Activity name
-    $description: Replaces the name after Listening to. Use {title}, {artist}, or {album}, enter custom text such as a semicolon, or leave empty to use the registered Taskbar Media Presence application name. Discord may reject whitespace-only names.
+    $name: Song detail template
+    $description: Main presence line using {title}, {artist}, {album}, or {app}. Discord controls the Listening to application name from the Developer Portal and doesn't let a local activity replace it.
   - fetchOnlineArtwork: true
     $name: Look up album artwork online
-    $description: Searches Apple Music first, then Deezer, then MusicBrainz/Cover Art Archive. Strict title and artist checks avoid using an unrelated cover. Disable this to use only the static asset key below.
+    $description: Used only while Discord presence is enabled. Sends the selected title, artist, and album to Apple Music and Deezer, then MusicBrainz/Cover Art Archive when needed. Strict matching avoids unrelated covers; disable this to use only the static asset key below.
   - largeImageKey: "taskbar_media_presence"
     $name: Fallback image asset key
     $description: Asset key uploaded under your Discord application's Rich Presence assets. Used whenever every online catalog fails. Upload assets/taskbar_media_presence.png with this key.
@@ -567,6 +573,31 @@ Created and maintained by **[MrBoxik](https://github.com/MrBoxik)**. Based on **
   $name: Advanced / troubleshooting
 */
 // ==/WindhawkModSettings==
+
+/*
+MIT License
+
+Copyright (c) 2026 Salyts
+Copyright (c) 2026 MrBoxik
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
 
 #undef GetCurrentTime
 
@@ -616,8 +647,10 @@ Created and maintained by **[MrBoxik](https://github.com/MrBoxik)**. Based on **
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <mutex>
+#include <unordered_map>
 #include <string>
 #include <vector>
 #include <set>
@@ -762,13 +795,14 @@ struct ModSettings {
     int          titleColorOpacity    = 100;
     std::wstring artistColor          = L"255 255 255";
     int          artistColorOpacity   = 80;
+    std::wstring preferredMediaApp    = L"";
     std::wstring ignoredProcesses     = L"";
     bool         enableTreeDump       = false;
     bool         showDebugBorders     = false;
     bool         showLayoutAnchors    = false;
     bool         hideUnsupportedButtons  = false;
     bool         disableAlbumArtClick    = false;
-    bool         discordPresenceEnabled   = true;
+    bool         discordPresenceEnabled   = false;
     std::wstring discordApplicationId     = L"1528896038163710112";
     bool         discordShowPaused        = true;
     std::wstring discordActivityName      = L"{title}";
@@ -776,6 +810,17 @@ struct ModSettings {
     std::wstring discordLargeImageKey = L"taskbar_media_presence";
 };
 static ModSettings g_settings;
+static std::mutex g_mediaSourceMtx;
+
+static std::wstring GetPreferredMediaApp() {
+    std::lock_guard<std::mutex> lock(g_mediaSourceMtx);
+    return g_settings.preferredMediaApp;
+}
+
+static void StorePreferredMediaApp(const std::wstring& appId) {
+    std::lock_guard<std::mutex> lock(g_mediaSourceMtx);
+    g_settings.preferredMediaApp = appId;
+}
 
 static void ParseTwoInts(const std::wstring& s, int& a, int& b) {
     size_t sp = s.find(L' ');
@@ -790,12 +835,10 @@ enum class MediaButtonType {
     Previous = 1,
     PlayPause = 2,
     Next = 3,
-    Stop = 4,
     Rewind5s = 5,
     Forward5s = 6,
     Shuffle = 7,
     Repeat = 8,
-    SwitchSessions = 9,
     Volume = 10,
 };
 
@@ -813,7 +856,6 @@ static const std::vector<MediaButtonDefinition> g_mediaButtonDefinitions = {
     {L"forward", MediaButtonType::Forward5s, 6},
     {L"shuffle", MediaButtonType::Shuffle, 7},
     {L"repeat", MediaButtonType::Repeat, 8},
-    {L"switch_sessions", MediaButtonType::SwitchSessions, 9},
     {L"volume", MediaButtonType::Volume, 13},
 };
 
@@ -848,7 +890,25 @@ static std::wstring MapFontName(const std::wstring& key) {
     return L"Segoe UI Variable Display";
 }
 
+static std::atomic<int> g_taskbarCenteredState{-1};
+
+static bool IsWindowsTaskbarCentered() {
+    int cached = g_taskbarCenteredState.load();
+    if (cached >= 0) return cached != 0;
+    DWORD value = 1;
+    DWORD size = sizeof(value);
+    LSTATUS status = RegGetValueW(
+        HKEY_CURRENT_USER,
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+        L"TaskbarAl", RRF_RT_REG_DWORD, nullptr, &value, &size);
+    // Centered is the Windows 11 default when TaskbarAl isn't present.
+    bool centered = status != ERROR_SUCCESS || value != 0;
+    g_taskbarCenteredState = centered ? 1 : 0;
+    return centered;
+}
+
 static void LoadSettings() {
+    g_taskbarCenteredState = -1;
     auto Str = [](const wchar_t* key, const wchar_t* def) -> std::wstring {
         PCWSTR p = Wh_GetStringSetting(key);
         std::wstring r = (*p != L'\0') ? p : def;
@@ -1143,6 +1203,16 @@ static void LoadSettings() {
             g_settings.playerWheelAction = action;
         }
     }
+    std::wstring preferredMediaApp = StrAllowEmpty(
+        L"BehaviorSettings.MediaSourceSettings.preferredApp", L"");
+    if (Wh_GetIntValue(L"quickMediaSourceOverride", -1) == 1) {
+        wchar_t quickPreferredApp[1024]{};
+        Wh_GetStringValue(L"quickPreferredMediaApp", quickPreferredApp,
+                          ARRAYSIZE(quickPreferredApp));
+        preferredMediaApp = quickPreferredApp;
+    }
+    StorePreferredMediaApp(preferredMediaApp);
+
     g_settings.hideWhenNoMedia      = Wh_GetIntSetting(L"BehaviorSettings.hideWhenNoMedia")   != 0;
     g_settings.hideFullscreen       = Wh_GetIntSetting(L"BehaviorSettings.hideFullscreen")    != 0;
     g_settings.idleHideSeconds      = std::max(Wh_GetIntSetting(L"BehaviorSettings.idleHideSeconds"), 0);
@@ -1261,7 +1331,13 @@ static void LoadSettings() {
     } else if (g_settings.positionPreset == L"apps") {
         g_settings.position = L"taskbar_after_apps";
     } else if (g_settings.positionPreset == L"middle") {
-        g_settings.position = L"taskbar_center_edge";
+        // Center-on-center is covered by Windows' app buttons. Use the free
+        // far-left area for a centered Windows taskbar, reserving that space
+        // in the taskbar repeater so the player can't cover Widgets. Keep the
+        // original middle overlay when Windows itself is left aligned.
+        g_settings.position = IsWindowsTaskbarCentered()
+            ? L"taskbar_far_left_reserved"
+            : L"taskbar_center_edge";
     } else if (g_settings.positionPreset == L"right") {
         g_settings.position = L"tray_left";
     }
@@ -1286,12 +1362,208 @@ static void LoadSettings() {
 static HWND FindCurrentProcessTaskbarWnd();
 static void DispatchMediaUpdate();
 static void ApplySettings();
-static void ApplyTaskbarTransparencyToAll();
+static void ApplyTaskbarTransparencyToAll(
+    bool shutdownCleanup = false);
 
 static std::atomic<bool> g_unloading{false};
 static std::atomic<bool> g_applyingSettings{false};
 static std::atomic<bool> g_hookInjectionInProgress{false};
+static bool              g_isShellExplorerProcess = false;
 static std::atomic<int>  g_hookFailCount{0};
+static std::atomic<int>  g_asyncTaskCount{0};
+static std::mutex        g_asyncThreadsMtx;
+static std::vector<HANDLE> g_asyncThreadHandles;
+static bool              g_acceptAsyncTasks = true;
+
+template <typename TAsyncOperation>
+static auto WaitForWinrtOperation(
+    TAsyncOperation const& operation,
+    DWORD timeoutMs,
+    PCWSTR operationName = nullptr)
+    -> std::optional<decltype(operation.GetResults())> {
+    using winrt::Windows::Foundation::AsyncStatus;
+
+    const ULONGLONG started = GetTickCount64();
+    while (true) {
+        AsyncStatus status = operation.Status();
+        if (status == AsyncStatus::Completed) {
+            return operation.GetResults();
+        }
+        if (status == AsyncStatus::Canceled) {
+            return std::nullopt;
+        }
+        if (status == AsyncStatus::Error) {
+            // GetResults preserves the original HRESULT for the caller's
+            // surrounding exception boundary.
+            return operation.GetResults();
+        }
+
+        bool timedOut =
+            timeoutMs != INFINITE &&
+            GetTickCount64() - started >= timeoutMs;
+        if (g_unloading || g_applyingSettings || timedOut) {
+            try {
+                operation.Cancel();
+            } catch (...) {}
+            if (timedOut && operationName) {
+                Wh_Log(L"%ls timed out after %u ms",
+                       operationName, timeoutMs);
+            }
+            return std::nullopt;
+        }
+        Sleep(10);
+    }
+}
+
+struct AsyncTaskContext {
+    std::function<void()> task;
+};
+
+static DWORD WINAPI AsyncTaskThreadProc(void* parameter) {
+    std::unique_ptr<AsyncTaskContext> context(
+        static_cast<AsyncTaskContext*>(parameter));
+    try {
+        context->task();
+    } catch (...) {
+        Wh_Log(L"Background task: unhandled exception");
+    }
+    g_asyncTaskCount.fetch_sub(1);
+    return 0;
+}
+
+static void ReapCompletedAsyncTasksLocked() {
+    for (auto iterator = g_asyncThreadHandles.begin();
+         iterator != g_asyncThreadHandles.end();) {
+        if (WaitForSingleObject(*iterator, 0) == WAIT_OBJECT_0) {
+            CloseHandle(*iterator);
+            iterator = g_asyncThreadHandles.erase(iterator);
+        } else {
+            ++iterator;
+        }
+    }
+}
+
+static bool QueueAsyncTask(std::function<void()> task) {
+    if (!task || g_unloading) return false;
+
+    std::lock_guard<std::mutex> lock(g_asyncThreadsMtx);
+    if (!g_acceptAsyncTasks || g_unloading) return false;
+    ReapCompletedAsyncTasksLocked();
+
+    auto context = std::make_unique<AsyncTaskContext>();
+    context->task = std::move(task);
+    g_asyncTaskCount.fetch_add(1);
+    HANDLE thread = CreateThread(nullptr, 0, AsyncTaskThreadProc,
+                                 context.get(), 0, nullptr);
+    if (!thread) {
+        g_asyncTaskCount.fetch_sub(1);
+        return false;
+    }
+    context.release();
+    g_asyncThreadHandles.push_back(thread);
+    return true;
+}
+
+static void PauseAsyncTasks() {
+    std::lock_guard<std::mutex> lock(g_asyncThreadsMtx);
+    g_acceptAsyncTasks = false;
+}
+
+static void ResumeAsyncTasks() {
+    std::lock_guard<std::mutex> lock(g_asyncThreadsMtx);
+    ReapCompletedAsyncTasksLocked();
+    g_acceptAsyncTasks = true;
+}
+
+static void WaitForThreadExit(HANDLE thread) {
+    if (!thread) return;
+    while (true) {
+        DWORD result = MsgWaitForMultipleObjects(
+            1, &thread, FALSE, INFINITE, QS_SENDMESSAGE);
+        if (result == WAIT_OBJECT_0) return;
+        if (result == WAIT_OBJECT_0 + 1) {
+            MSG message;
+            while (PeekMessageW(&message, nullptr, 0, 0,
+                                PM_REMOVE | PM_QS_SENDMESSAGE)) {
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+            continue;
+        }
+        return;
+    }
+}
+
+static bool WaitForThreadExitBounded(HANDLE thread, DWORD timeoutMs) {
+    if (!thread) return true;
+    ULONGLONG deadline = GetTickCount64() + timeoutMs;
+    while (true) {
+        ULONGLONG now = GetTickCount64();
+        DWORD remaining = now < deadline
+            ? static_cast<DWORD>(deadline - now)
+            : 0;
+        DWORD result = MsgWaitForMultipleObjects(
+            1, &thread, FALSE, remaining, QS_SENDMESSAGE);
+        if (result == WAIT_OBJECT_0) return true;
+        if (result == WAIT_OBJECT_0 + 1) {
+            MSG message;
+            while (PeekMessageW(&message, nullptr, 0, 0,
+                                PM_REMOVE | PM_QS_SENDMESSAGE)) {
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+            continue;
+        }
+        return WaitForSingleObject(thread, 0) == WAIT_OBJECT_0;
+    }
+}
+
+static bool WaitForAsyncTasks(DWORD timeoutMs) {
+    std::vector<HANDLE> handles;
+    {
+        std::lock_guard<std::mutex> lock(g_asyncThreadsMtx);
+        ReapCompletedAsyncTasksLocked();
+        handles.swap(g_asyncThreadHandles);
+    }
+    if (handles.empty()) return true;
+
+    ULONGLONG deadline = timeoutMs == INFINITE
+        ? 0
+        : GetTickCount64() + timeoutMs;
+    bool allStopped = true;
+    for (HANDLE thread : handles) {
+        while (true) {
+            DWORD remaining = INFINITE;
+            if (timeoutMs != INFINITE) {
+                ULONGLONG now = GetTickCount64();
+                remaining = now < deadline
+                    ? static_cast<DWORD>(deadline - now)
+                    : 0;
+            }
+            DWORD result = MsgWaitForMultipleObjects(
+                1, &thread, FALSE, remaining, QS_SENDMESSAGE);
+            if (result == WAIT_OBJECT_0) break;
+            if (result == WAIT_OBJECT_0 + 1) {
+                MSG message;
+                while (PeekMessageW(&message, nullptr, 0, 0,
+                                    PM_REMOVE | PM_QS_SENDMESSAGE)) {
+                    TranslateMessage(&message);
+                    DispatchMessageW(&message);
+                }
+                continue;
+            }
+            allStopped = false;
+            break;
+        }
+        if (WaitForSingleObject(thread, 0) == WAIT_OBJECT_0) {
+            CloseHandle(thread);
+        } else {
+            std::lock_guard<std::mutex> lock(g_asyncThreadsMtx);
+            g_asyncThreadHandles.push_back(thread);
+        }
+    }
+    return allStopped;
+}
 
 static const CLSID XIID_MMDeviceEnumerator = __uuidof(MMDeviceEnumerator);
 static const IID XIID_IMMDeviceEnumerator = __uuidof(IMMDeviceEnumerator);
@@ -1303,6 +1575,54 @@ static FrameworkElement g_injectionParent = nullptr;
 static int              g_playerColumn    = -1;
 static std::atomic<bool> g_needsUiUpdate{false};
 
+struct TextScrollState {
+    double offset    = 0.0;
+    double textWidth = 0.0;
+    double viewWidth = 0.0;
+    bool   forward   = true;
+    bool   active    = false;
+    bool   pausing   = false;
+    int    pauseTick = 0;
+    int    tickMs    = 16;
+};
+
+struct BlurBgCache {
+    std::vector<BYTE> blurredPixels;
+    int               width = 0;
+    int               height = 0;
+    size_t            artHash = 0;
+
+    void Invalidate() {
+        blurredPixels.clear();
+        width = height = 0;
+        artHash = 0;
+    }
+};
+
+struct AlbumPalette {
+    winrt::Windows::UI::Color primary;
+    winrt::Windows::UI::Color secondary;
+};
+
+struct PlayerVisualState {
+    std::wstring cachedAlbumTitle;
+    std::wstring cachedAlbumArtist;
+    std::vector<BYTE> cachedThumbnailBytes;
+    int cachedAppIconSize = -1;
+    std::wstring scrollCachedTitle;
+    std::wstring scrollCachedArtist;
+    TextScrollState titleScroll;
+    TextScrollState artistScroll;
+    BlurBgCache blurBgCache;
+    AlbumPalette cachedAlbumPalette{
+        winrt::Windows::UI::Color{255, 18, 18, 18},
+        winrt::Windows::UI::Color{255, 45, 45, 45}};
+    size_t cachedPaletteHash = 0;
+};
+
+static std::shared_ptr<PlayerVisualState> g_primaryVisualState =
+    std::make_shared<PlayerVisualState>();
+
 struct MirrorPlayerInstance {
     HWND taskbarWindow = nullptr;
     Grid playerGrid{nullptr};
@@ -1311,13 +1631,11 @@ struct MirrorPlayerInstance {
     FrameworkElement trackedElement{nullptr};
     Thickness trackedOriginalMargin{};
     winrt::event_token layoutUpdatedToken{};
+    std::shared_ptr<PlayerVisualState> visualState =
+        std::make_shared<PlayerVisualState>();
 };
 
 static std::vector<std::shared_ptr<MirrorPlayerInstance>> g_mirrorPlayers;
-static bool g_refreshingMirrorPlayers = false;
-static bool g_updatingMirrorVisibility = false;
-static bool g_refreshingMirrorTheme = false;
-
 static FrameworkElement g_trackedElement = nullptr;
 static Thickness g_trackedElementOriginalMargin{};
 static bool g_hasTrackedElementOriginalMargin = false;
@@ -1338,38 +1656,344 @@ static void* CSecondaryTaskBand_ITaskListWndSite_vftable = nullptr;
 
 using WindowThreadProc = void(*)(void*);
 
-static bool RunFromWindowThread(HWND hWnd, WindowThreadProc proc, void* param) {
-    static const UINT kMsg = RegisterWindowMessage(L"Windhawk_RunFromWindowThread_" WH_MOD_ID);
+enum class WindowDispatchPhase : LONG {
+    Pending,
+    Running,
+    Completed,
+    Cancelled,
+};
 
-    struct Payload { WindowThreadProc proc; void* param; };
+struct WindowDispatchRequest {
+    WindowThreadProc proc = nullptr;
+    void* param = nullptr;
+    bool allowDuringShutdown = false;
+    std::atomic<WindowDispatchPhase> phase{WindowDispatchPhase::Pending};
+    std::atomic<bool> succeeded{false};
+    HANDLE completedEvent = nullptr;
 
-    DWORD tid = GetWindowThreadProcessId(hWnd, nullptr);
-    if (!tid) return false;
+    ~WindowDispatchRequest() {
+        if (completedEvent) CloseHandle(completedEvent);
+    }
+};
 
-    if (tid == GetCurrentThreadId()) {
-        proc(param);
-        return true;
+static std::mutex g_windowDispatchRequestsMtx;
+static std::unordered_map<ULONG_PTR, std::shared_ptr<WindowDispatchRequest>>
+    g_windowDispatchRequests;
+static std::atomic<ULONG_PTR> g_nextWindowDispatchId{1};
+static std::mutex g_failedWindowDispatchHooksMtx;
+static std::vector<HHOOK> g_failedWindowDispatchHooks;
+
+static SRWLOCK g_windowDispatchActivityLock = SRWLOCK_INIT;
+static CONDITION_VARIABLE g_windowDispatchActivityChanged =
+    CONDITION_VARIABLE_INIT;
+static LONG g_activeWindowDispatchCalls = 0;
+static LONG g_activeWindowDispatchHookCallbacks = 0;
+static bool g_windowDispatchShuttingDown = false;
+static thread_local bool g_allowWindowDispatchDuringShutdown = false;
+
+class WindowDispatchActivityGuard {
+public:
+    enum class Kind { Call, HookCallback };
+
+    WindowDispatchActivityGuard(Kind kind, bool allowDuringShutdown = false)
+        : m_kind(kind) {
+        AcquireSRWLockExclusive(&g_windowDispatchActivityLock);
+        if (kind == Kind::Call &&
+            g_windowDispatchShuttingDown &&
+            !allowDuringShutdown &&
+            !g_allowWindowDispatchDuringShutdown) {
+            ReleaseSRWLockExclusive(&g_windowDispatchActivityLock);
+            return;
+        }
+
+        if (kind == Kind::Call) {
+            ++g_activeWindowDispatchCalls;
+        } else {
+            ++g_activeWindowDispatchHookCallbacks;
+        }
+        m_entered = true;
+        ReleaseSRWLockExclusive(&g_windowDispatchActivityLock);
     }
 
-    HHOOK hook = SetWindowsHookExW(WH_CALLWNDPROC,
-        [](int code, WPARAM w, LPARAM l) CALLBACK -> LRESULT {
-            if (code == HC_ACTION) {
-                auto* cwp = reinterpret_cast<const CWPSTRUCT*>(l);
-                static const UINT kM = RegisterWindowMessage(L"Windhawk_RunFromWindowThread_" WH_MOD_ID);
-                if (cwp->message == kM) {
-                    auto* p = reinterpret_cast<Payload*>(cwp->lParam);
-                    p->proc(p->param);
+    ~WindowDispatchActivityGuard() {
+        if (!m_entered) return;
+        AcquireSRWLockExclusive(&g_windowDispatchActivityLock);
+        if (m_kind == Kind::Call) {
+            --g_activeWindowDispatchCalls;
+        } else {
+            --g_activeWindowDispatchHookCallbacks;
+        }
+        WakeAllConditionVariable(&g_windowDispatchActivityChanged);
+        ReleaseSRWLockExclusive(&g_windowDispatchActivityLock);
+    }
+
+    explicit operator bool() const {
+        return m_entered;
+    }
+
+private:
+    Kind m_kind;
+    bool m_entered = false;
+};
+
+class WindowDispatchShutdownScope {
+public:
+    explicit WindowDispatchShutdownScope(bool enable)
+        : m_previous(g_allowWindowDispatchDuringShutdown) {
+        if (enable) g_allowWindowDispatchDuringShutdown = true;
+    }
+
+    ~WindowDispatchShutdownScope() {
+        g_allowWindowDispatchDuringShutdown = m_previous;
+    }
+
+private:
+    bool m_previous;
+};
+
+static bool InvokeWindowThreadProcWithCppExceptionBoundary(
+    WindowThreadProc proc, void* param) {
+    try {
+        proc(param);
+        return true;
+    } catch (...) {
+        Wh_Log(L"RunFromWindowThread: dispatched procedure threw an exception");
+        return false;
+    }
+}
+
+static bool InvokeWindowThreadProcSafely(WindowThreadProc proc, void* param) {
+    if (!proc) return false;
+    return InvokeWindowThreadProcWithCppExceptionBoundary(proc, param);
+}
+
+static std::shared_ptr<WindowDispatchRequest> FindWindowDispatchRequest(
+    ULONG_PTR id) {
+    std::lock_guard<std::mutex> lock(g_windowDispatchRequestsMtx);
+    auto iterator = g_windowDispatchRequests.find(id);
+    return iterator == g_windowDispatchRequests.end()
+        ? nullptr
+        : iterator->second;
+}
+
+static LRESULT CALLBACK WindowThreadDispatchHookProc(
+    int code, WPARAM wParam, LPARAM lParam) {
+    WindowDispatchActivityGuard activity(
+        WindowDispatchActivityGuard::Kind::HookCallback);
+
+    if (code == HC_ACTION) {
+        try {
+            auto* call = reinterpret_cast<const CWPSTRUCT*>(lParam);
+            static const UINT message = RegisterWindowMessage(
+                L"Windhawk_RunFromWindowThread_" WH_MOD_ID);
+            if (call && message && call->message == message) {
+                auto request = FindWindowDispatchRequest(
+                    static_cast<ULONG_PTR>(call->lParam));
+                if (request) {
+                    WindowDispatchPhase expected =
+                        WindowDispatchPhase::Pending;
+                    if (request->phase.compare_exchange_strong(
+                            expected, WindowDispatchPhase::Running,
+                            std::memory_order_acq_rel)) {
+                        WindowDispatchShutdownScope shutdownScope(
+                            request->allowDuringShutdown);
+                        request->succeeded.store(
+                            InvokeWindowThreadProcSafely(
+                                request->proc, request->param),
+                            std::memory_order_release);
+                        request->phase.store(
+                            WindowDispatchPhase::Completed,
+                            std::memory_order_release);
+                        SetEvent(request->completedEvent);
+                    }
                 }
             }
-            return CallNextHookEx(nullptr, code, w, l);
-        }, nullptr, tid);
+        } catch (...) {
+            Wh_Log(L"RunFromWindowThread: hook callback exception");
+        }
+    }
 
-    if (!hook) return false;
+    return CallNextHookEx(nullptr, code, wParam, lParam);
+}
 
-    Payload pay{proc, param};
-    SendMessageW(hWnd, kMsg, 0, reinterpret_cast<LPARAM>(&pay));
-    UnhookWindowsHookEx(hook);
-    return true;
+static void WaitForWindowDispatchCompletion(HANDLE completedEvent) {
+    if (!completedEvent) return;
+    while (true) {
+        DWORD result = MsgWaitForMultipleObjects(
+            1, &completedEvent, FALSE, INFINITE, QS_SENDMESSAGE);
+        if (result == WAIT_OBJECT_0) return;
+        if (result == WAIT_OBJECT_0 + 1) {
+            MSG message{};
+            while (PeekMessageW(&message, nullptr, 0, 0,
+                                PM_REMOVE | PM_QS_SENDMESSAGE)) {
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+            continue;
+        }
+
+        // The event handle belongs to a live request, so WAIT_FAILED is not
+        // expected. A direct wait is the safest fallback because returning
+        // while the callback is running could invalidate a caller's stack
+        // parameter.
+        WaitForSingleObject(completedEvent, INFINITE);
+        return;
+    }
+}
+
+static bool RunFromWindowThreadImpl(
+    HWND hWnd, WindowThreadProc proc, void* param,
+    bool allowDuringShutdown, DWORD timeoutMs) {
+    WindowDispatchActivityGuard activity(
+        WindowDispatchActivityGuard::Kind::Call, allowDuringShutdown);
+    if (!activity || !hWnd || !proc || !IsWindow(hWnd)) return false;
+
+    DWORD tid = GetWindowThreadProcessId(hWnd, nullptr);
+    if (!tid || IsHungAppWindow(hWnd)) return false;
+
+    if (tid == GetCurrentThreadId()) {
+        WindowDispatchShutdownScope shutdownScope(allowDuringShutdown);
+        return InvokeWindowThreadProcSafely(proc, param);
+    }
+
+    static const UINT message = RegisterWindowMessage(
+        L"Windhawk_RunFromWindowThread_" WH_MOD_ID);
+    if (!message) return false;
+
+    auto request = std::make_shared<WindowDispatchRequest>();
+    request->proc = proc;
+    request->param = param;
+    request->allowDuringShutdown = allowDuringShutdown;
+    request->completedEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (!request->completedEvent) return false;
+
+    ULONG_PTR requestId = g_nextWindowDispatchId.fetch_add(
+        1, std::memory_order_relaxed);
+    if (!requestId) {
+        requestId = g_nextWindowDispatchId.fetch_add(
+            1, std::memory_order_relaxed);
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_windowDispatchRequestsMtx);
+        while (!requestId ||
+               g_windowDispatchRequests.find(requestId) !=
+                   g_windowDispatchRequests.end()) {
+            requestId = g_nextWindowDispatchId.fetch_add(
+                1, std::memory_order_relaxed);
+        }
+        g_windowDispatchRequests.emplace(requestId, request);
+    }
+
+    HHOOK hook = SetWindowsHookExW(
+        WH_CALLWNDPROC, WindowThreadDispatchHookProc, nullptr, tid);
+    if (!hook) {
+        std::lock_guard<std::mutex> lock(g_windowDispatchRequestsMtx);
+        g_windowDispatchRequests.erase(requestId);
+        return false;
+    }
+
+    DWORD_PTR ignoredResult = 0;
+    LRESULT sent = SendMessageTimeoutW(
+        hWnd, message, 0, static_cast<LPARAM>(requestId),
+        SMTO_ABORTIFHUNG | SMTO_BLOCK | SMTO_ERRORONEXIT,
+        timeoutMs, &ignoredResult);
+
+    WindowDispatchPhase phase = request->phase.load(
+        std::memory_order_acquire);
+    if (!sent && phase == WindowDispatchPhase::Pending) {
+        request->phase.compare_exchange_strong(
+            phase, WindowDispatchPhase::Cancelled,
+            std::memory_order_acq_rel);
+    } else if (sent && phase == WindowDispatchPhase::Pending) {
+        // A successful send without our hook seeing the message must never
+        // leave a live request that can run after this function returns.
+        request->phase.compare_exchange_strong(
+            phase, WindowDispatchPhase::Cancelled,
+            std::memory_order_acq_rel);
+    }
+
+    if (!UnhookWindowsHookEx(hook)) {
+        std::lock_guard<std::mutex> lock(g_failedWindowDispatchHooksMtx);
+        g_failedWindowDispatchHooks.push_back(hook);
+        Wh_Log(L"RunFromWindowThread: UnhookWindowsHookEx failed (%u)",
+               GetLastError());
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(g_windowDispatchRequestsMtx);
+        auto iterator = g_windowDispatchRequests.find(requestId);
+        if (iterator != g_windowDispatchRequests.end() &&
+            iterator->second == request) {
+            g_windowDispatchRequests.erase(iterator);
+        }
+    }
+
+    phase = request->phase.load(std::memory_order_acquire);
+    if (phase == WindowDispatchPhase::Running) {
+        // Once execution has begun, wait for it to finish. This is the only
+        // way to preserve the lifetime of arbitrary caller-owned parameters.
+        WaitForWindowDispatchCompletion(request->completedEvent);
+        phase = request->phase.load(std::memory_order_acquire);
+    }
+
+    return phase == WindowDispatchPhase::Completed &&
+           request->succeeded.load(std::memory_order_acquire);
+}
+
+static bool RunFromWindowThread(
+    HWND hWnd, WindowThreadProc proc, void* param) {
+    return RunFromWindowThreadImpl(hWnd, proc, param, false, 2500);
+}
+
+static bool RunFromWindowThreadForCleanup(
+    HWND hWnd, WindowThreadProc proc, void* param) {
+    return RunFromWindowThreadImpl(hWnd, proc, param, true, 4000);
+}
+
+static void BeginWindowDispatchShutdown() {
+    AcquireSRWLockExclusive(&g_windowDispatchActivityLock);
+    g_windowDispatchShuttingDown = true;
+    ReleaseSRWLockExclusive(&g_windowDispatchActivityLock);
+}
+
+static void ResetWindowDispatchShutdown() {
+    AcquireSRWLockExclusive(&g_windowDispatchActivityLock);
+    g_windowDispatchShuttingDown = false;
+    ReleaseSRWLockExclusive(&g_windowDispatchActivityLock);
+}
+
+static void WaitForWindowDispatchActivityIdle() {
+    AcquireSRWLockExclusive(&g_windowDispatchActivityLock);
+    while (g_activeWindowDispatchCalls ||
+           g_activeWindowDispatchHookCallbacks) {
+        SleepConditionVariableSRW(
+            &g_windowDispatchActivityChanged,
+            &g_windowDispatchActivityLock, INFINITE, 0);
+    }
+    ReleaseSRWLockExclusive(&g_windowDispatchActivityLock);
+}
+
+static bool RetryFailedWindowDispatchHooks() {
+    std::vector<HHOOK> hooks;
+    {
+        std::lock_guard<std::mutex> lock(g_failedWindowDispatchHooksMtx);
+        hooks.swap(g_failedWindowDispatchHooks);
+    }
+
+    std::vector<HHOOK> failedAgain;
+    for (HHOOK hook : hooks) {
+        if (!UnhookWindowsHookEx(hook)) {
+            failedAgain.push_back(hook);
+        }
+    }
+
+    if (!failedAgain.empty()) {
+        std::lock_guard<std::mutex> lock(g_failedWindowDispatchHooksMtx);
+        g_failedWindowDispatchHooks.insert(
+            g_failedWindowDispatchHooks.end(),
+            failedAgain.begin(), failedAgain.end());
+    }
+    return failedAgain.empty();
 }
 
 struct MediaState {
@@ -1378,6 +2002,7 @@ struct MediaState {
     std::wstring      albumTitle;
     std::wstring      appUserModelId;
     bool              isPlaying     = false;
+    bool              playbackStateKnown = false;
     bool              hasMedia      = false;
     int64_t           positionSeconds = 0;
     int64_t           durationSeconds = 0;
@@ -1395,6 +2020,52 @@ struct MediaState {
 
 static MediaState g_media;
 static std::mutex g_mediaMtx;
+
+// Worker-event slots are read by several producer threads and closed by the
+// settings/unload path. Keep signal/create/close atomic with respect to one
+// another so a stale producer can never SetEvent on a closed, reused handle.
+static std::mutex g_workerEventHandlesMtx;
+
+static bool CreateWorkerEventHandle(
+    HANDLE& slot, bool manualReset, bool initialState) {
+    HANDLE created = CreateEventW(
+        nullptr, manualReset ? TRUE : FALSE,
+        initialState ? TRUE : FALSE, nullptr);
+    if (!created) return false;
+
+    std::lock_guard<std::mutex> lock(g_workerEventHandlesMtx);
+    if (slot) {
+        CloseHandle(created);
+        return false;
+    }
+    slot = created;
+    return true;
+}
+
+static HANDLE SnapshotWorkerEventHandle(HANDLE& slot) {
+    std::lock_guard<std::mutex> lock(g_workerEventHandlesMtx);
+    return slot;
+}
+
+static bool SignalWorkerEventHandle(HANDLE& slot) {
+    std::lock_guard<std::mutex> lock(g_workerEventHandlesMtx);
+    return slot && SetEvent(slot);
+}
+
+static bool IsWorkerEventSignaled(HANDLE& slot) {
+    std::lock_guard<std::mutex> lock(g_workerEventHandlesMtx);
+    return slot &&
+           WaitForSingleObject(slot, 0) == WAIT_OBJECT_0;
+}
+
+static void CloseWorkerEventHandle(HANDLE& slot) {
+    std::lock_guard<std::mutex> lock(g_workerEventHandlesMtx);
+    HANDLE handle = slot;
+    slot = nullptr;
+    if (handle) CloseHandle(handle);
+}
+
+static bool PinModuleForOutstandingCallbacks(PCWSTR reason);
 
 // Discord's desktop Rich Presence RPC requires a registered application ID.
 // This is an original, minimal local IPC client: it publishes the current
@@ -1492,18 +2163,34 @@ static std::wstring UrlEncodeQueryValue(const std::wstring& value) {
     return std::wstring(encoded.begin(), encoded.end());
 }
 
+static bool DiscordStopRequested(HANDLE stopEvent) {
+    return stopEvent &&
+           WaitForSingleObject(stopEvent, 0) == WAIT_OBJECT_0;
+}
+
 static std::string WinHttpGetUtf8(const wchar_t* host,
-                                  const std::wstring& path) {
+                                  const std::wstring& path,
+                                  HANDLE stopEvent) {
+    if (DiscordStopRequested(stopEvent)) return {};
     HINTERNET session = WinHttpOpen(
-        L"Taskbar Media Presence/0.10.1",
+        L"Taskbar Media Presence/1.0.0",
         WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) return {};
     WinHttpSetTimeouts(session, 2000, 2000, 2000, 2000);
+    if (DiscordStopRequested(stopEvent)) {
+        WinHttpCloseHandle(session);
+        return {};
+    }
 
     HINTERNET connection = WinHttpConnect(
         session, host, INTERNET_DEFAULT_HTTPS_PORT, 0);
     if (!connection) {
+        WinHttpCloseHandle(session);
+        return {};
+    }
+    if (DiscordStopRequested(stopEvent)) {
+        WinHttpCloseHandle(connection);
         WinHttpCloseHandle(session);
         return {};
     }
@@ -1518,10 +2205,13 @@ static std::string WinHttpGetUtf8(const wchar_t* host,
     }
 
     std::string body;
-    bool success = WinHttpSendRequest(
-        request, L"Accept: application/json\r\n", -1L,
-        WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
-        WinHttpReceiveResponse(request, nullptr);
+    bool success = !DiscordStopRequested(stopEvent) &&
+        WinHttpSendRequest(
+            request, L"Accept: application/json\r\n", -1L,
+            WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
+    if (success && !DiscordStopRequested(stopEvent)) {
+        success = WinHttpReceiveResponse(request, nullptr) != FALSE;
+    }
     DWORD statusCode = 0;
     DWORD statusSize = sizeof(statusCode);
     if (success) {
@@ -1531,7 +2221,8 @@ static std::string WinHttpGetUtf8(const wchar_t* host,
             WINHTTP_NO_HEADER_INDEX) && statusCode == 200;
     }
 
-    while (success && body.size() < 512 * 1024) {
+    while (success && !DiscordStopRequested(stopEvent) &&
+           body.size() < 512 * 1024) {
         DWORD available = 0;
         if (!WinHttpQueryDataAvailable(request, &available)) {
             success = false;
@@ -1552,17 +2243,25 @@ static std::string WinHttpGetUtf8(const wchar_t* host,
     WinHttpCloseHandle(request);
     WinHttpCloseHandle(connection);
     WinHttpCloseHandle(session);
-    return success ? body : std::string{};
+    return success && !DiscordStopRequested(stopEvent)
+        ? body
+        : std::string{};
 }
 
 static DWORD WinHttpHeadStatus(const wchar_t* host,
-                               const std::wstring& path) {
+                               const std::wstring& path,
+                               HANDLE stopEvent) {
+    if (DiscordStopRequested(stopEvent)) return 0;
     HINTERNET session = WinHttpOpen(
-        L"Taskbar Media Presence/0.10.1",
+        L"Taskbar Media Presence/1.0.0",
         WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) return 0;
     WinHttpSetTimeouts(session, 2000, 2000, 2000, 2000);
+    if (DiscordStopRequested(stopEvent)) {
+        WinHttpCloseHandle(session);
+        return 0;
+    }
 
     HINTERNET connection = WinHttpConnect(
         session, host, INTERNET_DEFAULT_HTTPS_PORT, 0);
@@ -1575,10 +2274,13 @@ static DWORD WinHttpHeadStatus(const wchar_t* host,
         connection, L"HEAD", path.c_str(), nullptr, WINHTTP_NO_REFERER,
         WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE | WINHTTP_FLAG_REFRESH);
     DWORD statusCode = 0;
-    if (request && WinHttpSendRequest(
+    bool sent = request && !DiscordStopRequested(stopEvent) &&
+        WinHttpSendRequest(
             request, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-            WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
-        WinHttpReceiveResponse(request, nullptr)) {
+            WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
+    bool received = sent && !DiscordStopRequested(stopEvent) &&
+        WinHttpReceiveResponse(request, nullptr);
+    if (received && !DiscordStopRequested(stopEvent)) {
         DWORD statusSize = sizeof(statusCode);
         if (!WinHttpQueryHeaders(
             request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
@@ -1591,7 +2293,7 @@ static DWORD WinHttpHeadStatus(const wchar_t* host,
     if (request) WinHttpCloseHandle(request);
     WinHttpCloseHandle(connection);
     WinHttpCloseHandle(session);
-    return statusCode;
+    return DiscordStopRequested(stopEvent) ? 0 : statusCode;
 }
 
 static int JsonHexDigit(char value) {
@@ -1718,7 +2420,9 @@ static bool ArtworkFieldMatches(const std::wstring& expected,
          right.find(left) != std::wstring::npos);
 }
 
-static std::wstring ResolveAppleAlbumArtwork(const MediaState& media) {
+static std::wstring ResolveAppleAlbumArtwork(const MediaState& media,
+                                              HANDLE stopEvent) {
+    if (DiscordStopRequested(stopEvent)) return {};
     std::wstring query = media.title;
     if (!media.artist.empty()) query += L" " + media.artist;
     if (!media.albumTitle.empty()) query += L" " + media.albumTitle;
@@ -1726,7 +2430,9 @@ static std::wstring ResolveAppleAlbumArtwork(const MediaState& media) {
 
     std::wstring path = L"/search?term=" + UrlEncodeQueryValue(query) +
         L"&media=music&entity=song&limit=10";
-    std::string response = WinHttpGetUtf8(L"itunes.apple.com", path);
+    std::string response =
+        WinHttpGetUtf8(L"itunes.apple.com", path, stopEvent);
+    if (DiscordStopRequested(stopEvent)) return {};
     size_t resultsMarker = response.find("\"results\"");
     size_t arrayStart = resultsMarker == std::string::npos
         ? std::string::npos
@@ -1811,7 +2517,9 @@ static std::wstring ResolveAppleAlbumArtwork(const MediaState& media) {
     return FromUtf8(bestArtwork);
 }
 
-static std::wstring ResolveDeezerAlbumArtwork(const MediaState& media) {
+static std::wstring ResolveDeezerAlbumArtwork(const MediaState& media,
+                                               HANDLE stopEvent) {
+    if (DiscordStopRequested(stopEvent)) return {};
     std::wstring query = media.title;
     if (!media.artist.empty()) query += L" " + media.artist;
     if (!media.albumTitle.empty()) query += L" " + media.albumTitle;
@@ -1819,7 +2527,9 @@ static std::wstring ResolveDeezerAlbumArtwork(const MediaState& media) {
 
     std::wstring path = L"/search?q=" + UrlEncodeQueryValue(query) +
         L"&limit=10";
-    std::string response = WinHttpGetUtf8(L"api.deezer.com", path);
+    std::string response =
+        WinHttpGetUtf8(L"api.deezer.com", path, stopEvent);
+    if (DiscordStopRequested(stopEvent)) return {};
     size_t dataMarker = response.find("\"data\"");
     size_t arrayStart = dataMarker == std::string::npos
         ? std::string::npos
@@ -1913,7 +2623,9 @@ static bool IsMusicBrainzId(const std::string& value) {
     return true;
 }
 
-static std::wstring ResolveMusicBrainzAlbumArtwork(const MediaState& media) {
+static std::wstring ResolveMusicBrainzAlbumArtwork(const MediaState& media,
+                                                    HANDLE stopEvent) {
+    if (DiscordStopRequested(stopEvent)) return {};
     // Release-group lookup is deliberately used only when the player provides
     // an album tag. Matching an artist and album is much safer than guessing a
     // release from a track title alone.
@@ -1923,7 +2635,9 @@ static std::wstring ResolveMusicBrainzAlbumArtwork(const MediaState& media) {
         L"\" AND artist:\"" + media.artist + L"\"";
     std::wstring path = L"/ws/2/release-group/?query=" +
         UrlEncodeQueryValue(query) + L"&fmt=json&limit=5";
-    std::string response = WinHttpGetUtf8(L"musicbrainz.org", path);
+    std::string response =
+        WinHttpGetUtf8(L"musicbrainz.org", path, stopEvent);
+    if (DiscordStopRequested(stopEvent)) return {};
     size_t resultsMarker = response.find("\"release-groups\"");
     size_t arrayStart = resultsMarker == std::string::npos
         ? std::string::npos
@@ -1967,8 +2681,9 @@ static std::wstring ResolveMusicBrainzAlbumArtwork(const MediaState& media) {
                 std::wstring id(candidateId.begin(), candidateId.end());
                 std::wstring coverPath = L"/release-group/" + id +
                     L"/front-500";
+                if (DiscordStopRequested(stopEvent)) return {};
                 DWORD coverStatus = WinHttpHeadStatus(
-                    L"coverartarchive.org", coverPath);
+                    L"coverartarchive.org", coverPath, stopEvent);
                 // A transport failure here should not discard a valid catalog
                 // match: Discord fetches the HTTPS image independently. An
                 // explicit 404, however, means this release group has no front art.
@@ -1986,20 +2701,24 @@ static std::wstring ResolveMusicBrainzAlbumArtwork(const MediaState& media) {
     return {};
 }
 
-static std::wstring ResolveOnlineAlbumArtwork(const MediaState& media) {
-    std::wstring artwork = ResolveAppleAlbumArtwork(media);
+static std::wstring ResolveOnlineAlbumArtwork(const MediaState& media,
+                                               HANDLE stopEvent) {
+    if (DiscordStopRequested(stopEvent)) return {};
+    std::wstring artwork = ResolveAppleAlbumArtwork(media, stopEvent);
     if (!artwork.empty()) {
         Wh_Log(L"Discord presence: artwork source Apple Music");
         return artwork;
     }
 
-    artwork = ResolveDeezerAlbumArtwork(media);
+    if (DiscordStopRequested(stopEvent)) return {};
+    artwork = ResolveDeezerAlbumArtwork(media, stopEvent);
     if (!artwork.empty()) {
         Wh_Log(L"Discord presence: artwork source Deezer");
         return artwork;
     }
 
-    artwork = ResolveMusicBrainzAlbumArtwork(media);
+    if (DiscordStopRequested(stopEvent)) return {};
+    artwork = ResolveMusicBrainzAlbumArtwork(media, stopEvent);
     if (!artwork.empty()) {
         Wh_Log(L"Discord presence: artwork source Cover Art Archive");
     }
@@ -2022,6 +2741,7 @@ static std::wstring ResolveDiscordActivityName(
     ReplaceAll(result, L"{title}", media.title);
     ReplaceAll(result, L"{artist}", media.artist);
     ReplaceAll(result, L"{album}", media.albumTitle);
+    ReplaceAll(result, L"{app}", media.appUserModelId);
     return result;
 }
 
@@ -2071,8 +2791,7 @@ static bool DiscordPipeWaitForBytes(HANDLE pipe, DWORD count,
                                     DWORD timeoutMs) {
     ULONGLONG deadline = GetTickCount64() + timeoutMs;
     while (GetTickCount64() < deadline) {
-        if (g_discordPresenceStopEvent &&
-            WaitForSingleObject(g_discordPresenceStopEvent, 0) == WAIT_OBJECT_0) {
+        if (IsWorkerEventSignaled(g_discordPresenceStopEvent)) {
             return false;
         }
         DWORD available = 0;
@@ -2174,17 +2893,16 @@ static std::string MakeDiscordActivityCommand(
     if (!publish) {
         command += "null";
     } else {
-        std::string title = JsonEscapeUtf8(LimitUtf8(ToUtf8(media.title)));
+        std::wstring detailText =
+            activityName.empty() ? media.title : activityName;
+        std::string title =
+            JsonEscapeUtf8(LimitUtf8(ToUtf8(detailText)));
         std::wstring stateText = media.artist.empty()
             ? L"Unknown artist"
             : media.artist;
         if (!media.isPlaying) stateText = L"Paused - " + stateText;
         std::string state = JsonEscapeUtf8(LimitUtf8(ToUtf8(stateText)));
         command += "{\"type\":2";
-        if (!activityName.empty()) {
-            command += ",\"name\":\"" +
-                JsonEscapeUtf8(LimitUtf8(ToUtf8(activityName), 128)) + "\"";
-        }
         command += ",\"details\":\"" + title +
                    "\",\"state\":\"" + state + "\"";
         if (timing.valid) {
@@ -2239,8 +2957,13 @@ static DWORD WINAPI DiscordPresenceThreadProc(void*) {
     std::wstring resolvedArtwork;
     ULONGLONG lastArtworkLookupTick = 0;
     bool published = false;
+    HANDLE stopEvent =
+        SnapshotWorkerEventHandle(g_discordPresenceStopEvent);
+    HANDLE updateEvent =
+        SnapshotWorkerEventHandle(g_discordPresenceUpdateEvent);
+    if (!stopEvent || !updateEvent) return 0;
 
-    while (WaitForSingleObject(g_discordPresenceStopEvent, 0) != WAIT_OBJECT_0) {
+    while (WaitForSingleObject(stopEvent, 0) != WAIT_OBJECT_0) {
         MediaState media;
         {
             std::lock_guard<std::mutex> lock(g_mediaMtx);
@@ -2255,17 +2978,38 @@ static DWORD WINAPI DiscordPresenceThreadProc(void*) {
             artworkTrackKey = currentArtworkTrackKey;
             resolvedArtwork.clear();
 
+            // Publish immediately with the configured asset. Catalog lookups
+            // are optional decoration and must never delay the song/timeline
+            // appearing in Discord on startup or a slow connection.
+            std::wstring pendingActivityName =
+                ResolveDiscordActivityName(activityNameTemplate, media);
+            DiscordActivityTiming pendingTiming =
+                GetDiscordActivityTiming(media);
+            if (pipe == INVALID_HANDLE_VALUE) {
+                pipe = ConnectDiscordPresencePipe(applicationId);
+                lastStateKey.clear();
+            }
+            if (pipe != INVALID_HANDLE_VALUE &&
+                SendDiscordActivity(pipe, media, true, pendingTiming,
+                                    fallbackImageKey,
+                                    pendingActivityName)) {
+                published = true;
+                lastStateKey = L"<artwork-pending>\n" +
+                               currentArtworkTrackKey;
+            }
+
             ULONGLONG nowTick = GetTickCount64();
             if (lastArtworkLookupTick && nowTick - lastArtworkLookupTick < 3100) {
                 DWORD delay = static_cast<DWORD>(
                     3100 - (nowTick - lastArtworkLookupTick));
-                if (WaitForSingleObject(g_discordPresenceStopEvent, delay) ==
+                if (WaitForSingleObject(stopEvent, delay) ==
                     WAIT_OBJECT_0) {
                     break;
                 }
             }
             lastArtworkLookupTick = GetTickCount64();
-            resolvedArtwork = ResolveOnlineAlbumArtwork(media);
+            resolvedArtwork = ResolveOnlineAlbumArtwork(media, stopEvent);
+            if (DiscordStopRequested(stopEvent)) break;
             Wh_Log(L"Discord presence: album artwork %ls",
                    resolvedArtwork.empty() ? L"not found; using fallback"
                                            : L"resolved");
@@ -2315,8 +3059,7 @@ static DWORD WINAPI DiscordPresenceThreadProc(void*) {
             }
         }
 
-        HANDLE waits[] = {g_discordPresenceStopEvent,
-                          g_discordPresenceUpdateEvent};
+        HANDLE waits[] = {stopEvent, updateEvent};
         DWORD wait = WaitForMultipleObjects(2, waits, FALSE, 5000);
         if (wait == WAIT_OBJECT_0) break;
         if (wait == WAIT_TIMEOUT && pipe != INVALID_HANDLE_VALUE) {
@@ -2341,13 +3084,28 @@ static DWORD WINAPI DiscordPresenceThreadProc(void*) {
 }
 
 static void SignalDiscordPresenceUpdate() {
-    if (g_discordPresenceUpdateEvent) {
-        SetEvent(g_discordPresenceUpdateEvent);
+    SignalWorkerEventHandle(g_discordPresenceUpdateEvent);
+}
+
+static bool ReapStoppedDiscordPresenceThread() {
+    if (!g_discordPresenceThread) return true;
+    if (WaitForSingleObject(g_discordPresenceThread, 0) != WAIT_OBJECT_0) {
+        return false;
     }
+
+    CloseHandle(g_discordPresenceThread);
+    g_discordPresenceThread = nullptr;
+    CloseWorkerEventHandle(g_discordPresenceStopEvent);
+    CloseWorkerEventHandle(g_discordPresenceUpdateEvent);
+    return true;
 }
 
 static void StartDiscordPresenceThread() {
-    if (g_discordPresenceThread || !g_settings.discordPresenceEnabled) return;
+    if (!ReapStoppedDiscordPresenceThread()) {
+        Wh_Log(L"Discord presence: previous worker is still stopping");
+        return;
+    }
+    if (!g_settings.discordPresenceEnabled) return;
     if (!IsValidDiscordApplicationId(g_settings.discordApplicationId)) {
         if (!g_settings.discordApplicationId.empty()) {
             Wh_Log(L"Discord presence: Application ID must contain only digits");
@@ -2357,32 +3115,26 @@ static void StartDiscordPresenceThread() {
         return;
     }
 
-    g_discordPresenceStopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    g_discordPresenceUpdateEvent = CreateEventW(nullptr, FALSE, TRUE, nullptr);
-    if (!g_discordPresenceStopEvent || !g_discordPresenceUpdateEvent) {
+    bool stopEventCreated = CreateWorkerEventHandle(
+        g_discordPresenceStopEvent, true, false);
+    bool updateEventCreated = CreateWorkerEventHandle(
+        g_discordPresenceUpdateEvent, false, true);
+    if (!stopEventCreated || !updateEventCreated) {
         Wh_Log(L"Discord presence: failed to create worker events");
-        if (g_discordPresenceStopEvent) {
-            CloseHandle(g_discordPresenceStopEvent);
-            g_discordPresenceStopEvent = nullptr;
-        }
-        if (g_discordPresenceUpdateEvent) {
-            CloseHandle(g_discordPresenceUpdateEvent);
-            g_discordPresenceUpdateEvent = nullptr;
-        }
+        CloseWorkerEventHandle(g_discordPresenceStopEvent);
+        CloseWorkerEventHandle(g_discordPresenceUpdateEvent);
         return;
     }
     g_discordPresenceThread = CreateThread(
         nullptr, 0, DiscordPresenceThreadProc, nullptr, 0, nullptr);
     if (!g_discordPresenceThread) {
-        CloseHandle(g_discordPresenceStopEvent);
-        CloseHandle(g_discordPresenceUpdateEvent);
-        g_discordPresenceStopEvent = nullptr;
-        g_discordPresenceUpdateEvent = nullptr;
+        CloseWorkerEventHandle(g_discordPresenceStopEvent);
+        CloseWorkerEventHandle(g_discordPresenceUpdateEvent);
     }
 }
 
 static void StopDiscordPresenceThread() {
-    if (g_discordPresenceStopEvent) SetEvent(g_discordPresenceStopEvent);
+    SignalWorkerEventHandle(g_discordPresenceStopEvent);
     if (g_discordPresenceThread) {
         using CancelSynchronousIoFn = BOOL(WINAPI*)(HANDLE);
         HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
@@ -2393,23 +3145,24 @@ static void StopDiscordPresenceThread() {
         if (cancelSynchronousIo) {
             cancelSynchronousIo(g_discordPresenceThread);
         }
-        DWORD waitResult = WaitForSingleObject(g_discordPresenceThread, 12000);
-        if (waitResult != WAIT_OBJECT_0) {
-            Wh_Log(L"Discord presence: worker did not stop safely (result %lu)",
-                   waitResult);
+        // Synchronous catalog calls have their own short WinHTTP timeouts and
+        // CancelSynchronousIo normally wakes them immediately. Keep the stop
+        // path bounded nevertheless. On a pathological provider hang, retain
+        // both the worker and its events; closing either would create a
+        // use-after-close. During unload, pin the module so the still-running
+        // code can never be unmapped.
+        if (!WaitForThreadExitBounded(g_discordPresenceThread, 6000)) {
+            Wh_Log(
+                L"Discord presence: worker did not stop within 6 seconds; "
+                L"cleanup deferred");
+            if (g_unloading) {
+                PinModuleForOutstandingCallbacks(
+                    L"Discord artwork worker still stopping");
+            }
             return;
         }
-        CloseHandle(g_discordPresenceThread);
-        g_discordPresenceThread = nullptr;
     }
-    if (g_discordPresenceStopEvent) {
-        CloseHandle(g_discordPresenceStopEvent);
-        g_discordPresenceStopEvent = nullptr;
-    }
-    if (g_discordPresenceUpdateEvent) {
-        CloseHandle(g_discordPresenceUpdateEvent);
-        g_discordPresenceUpdateEvent = nullptr;
-    }
+    ReapStoppedDiscordPresenceThread();
 }
 
 enum class RepeatMode {
@@ -2421,37 +3174,24 @@ enum class RepeatMode {
 static std::atomic<bool> g_shuffleEnabled{false};
 static std::atomic<RepeatMode> g_repeatMode{RepeatMode::Off};
 
-static std::wstring g_cachedAlbumTitle;
-static std::wstring g_cachedAlbumArtist;
-static std::vector<BYTE> g_cachedThumbnailBytes;
-static int g_cachedAppIconSize = -1;
+static std::wstring& g_cachedAlbumTitle =
+    g_primaryVisualState->cachedAlbumTitle;
+static std::wstring& g_cachedAlbumArtist =
+    g_primaryVisualState->cachedAlbumArtist;
+static std::vector<BYTE>& g_cachedThumbnailBytes =
+    g_primaryVisualState->cachedThumbnailBytes;
+static std::atomic<int> g_cachedAppIconSize{-1};
 
-static std::wstring g_scrollCachedTitle;
-static std::wstring g_scrollCachedArtist;
+static std::wstring& g_scrollCachedTitle =
+    g_primaryVisualState->scrollCachedTitle;
+static std::wstring& g_scrollCachedArtist =
+    g_primaryVisualState->scrollCachedArtist;
+static BlurBgCache& g_blurBgCache = g_primaryVisualState->blurBgCache;
 
-struct BlurBgCache {
-    std::vector<BYTE>  blurredPixels;
-    int                width  = 0;
-    int                height = 0;
-    size_t             artHash = 0;
-
-    void Invalidate() {
-        blurredPixels.clear();
-        width = height = 0;
-        artHash = 0;
-    }
-} g_blurBgCache;
-
-struct AlbumPalette {
-    winrt::Windows::UI::Color primary;
-    winrt::Windows::UI::Color secondary;
-};
-
-static AlbumPalette g_cachedAlbumPalette = {
-    winrt::Windows::UI::Color{255, 18, 18, 18},
-    winrt::Windows::UI::Color{255, 45, 45, 45}
-};
-static size_t g_cachedPaletteHash = 0;
+static AlbumPalette& g_cachedAlbumPalette =
+    g_primaryVisualState->cachedAlbumPalette;
+static size_t& g_cachedPaletteHash =
+    g_primaryVisualState->cachedPaletteHash;
 
 
 static GlobalSystemMediaTransportControlsSessionManager g_sessionMgr     = nullptr;
@@ -2459,7 +3199,12 @@ static GlobalSystemMediaTransportControlsSession        g_currentSession = nullp
 static std::mutex  g_sessionMtx;
 static bool g_userSwitchedSession = false;
 static std::atomic<bool> g_forceSessionRefresh{false};
-static std::atomic<int> g_sessionCount{0};
+static std::atomic<uint64_t> g_sessionGeneration{0};
+static std::atomic<ULONGLONG> g_metadataRetryUntilTick{0};
+static std::atomic<bool> g_mediaPropertiesFetchActive{false};
+static std::atomic<bool> g_playbackInfoFetchActive{false};
+static std::atomic<bool> g_mediaPropertiesFetchPending{false};
+static std::atomic<bool> g_playbackInfoFetchPending{false};
 
 static winrt::event_token g_evSessionsChanged{};
 static winrt::event_token g_evCurrentChanged{};
@@ -2469,6 +3214,46 @@ static winrt::event_token g_evTimeline{};
 
 static HANDLE g_mediaThread    = nullptr;
 static HANDLE g_mediaStopEvent = nullptr;
+static HANDLE g_mediaRefreshEvent = nullptr;
+
+static SRWLOCK g_mediaEventCallbackLock = SRWLOCK_INIT;
+static CONDITION_VARIABLE g_mediaEventCallbackChanged =
+    CONDITION_VARIABLE_INIT;
+static LONG g_activeMediaEventCallbacks = 0;
+
+class MediaEventCallbackGuard {
+public:
+    MediaEventCallbackGuard() {
+        AcquireSRWLockExclusive(&g_mediaEventCallbackLock);
+        ++g_activeMediaEventCallbacks;
+        ReleaseSRWLockExclusive(&g_mediaEventCallbackLock);
+    }
+
+    ~MediaEventCallbackGuard() {
+        AcquireSRWLockExclusive(&g_mediaEventCallbackLock);
+        --g_activeMediaEventCallbacks;
+        WakeAllConditionVariable(&g_mediaEventCallbackChanged);
+        ReleaseSRWLockExclusive(&g_mediaEventCallbackLock);
+    }
+};
+
+static void WaitForMediaEventCallbacksIdle() {
+    AcquireSRWLockExclusive(&g_mediaEventCallbackLock);
+    while (g_activeMediaEventCallbacks) {
+        SleepConditionVariableSRW(
+            &g_mediaEventCallbackChanged, &g_mediaEventCallbackLock,
+            INFINITE, 0);
+    }
+    ReleaseSRWLockExclusive(&g_mediaEventCallbackLock);
+}
+
+static void RequestMediaSessionRefresh() {
+    SignalWorkerEventHandle(g_mediaRefreshEvent);
+}
+
+static void ArmMetadataRetry(DWORD durationMs = 15000) {
+    g_metadataRetryUntilTick = GetTickCount64() + durationMs;
+}
 
 static bool IsSystemLightTheme() {
     DWORD v = 0, sz = sizeof(v);
@@ -2512,72 +3297,11 @@ static winrt::Windows::UI::Color GetSystemButtonPressedColor(std::wstring const&
     return winrt::Windows::UI::Color{0x0A, 0xFF, 0xFF, 0xFF};
 }
 
-static winrt::Windows::UI::Color GetSystemButtonBorderColor(std::wstring const& mode) {
-    if (IsHoverLightTheme(mode)) {
-        return winrt::Windows::UI::Color{0x08, 0x00, 0x00, 0x00};
-    }
-    return winrt::Windows::UI::Color{0x14, 0xFF, 0xFF, 0xFF};
-}
-
 static winrt::Windows::UI::Color GetSystemButtonBorderPressedColor(std::wstring const& mode) {
     if (IsHoverLightTheme(mode)) {
         return winrt::Windows::UI::Color{0x05, 0x00, 0x00, 0x00};
     }
     return winrt::Windows::UI::Color{0x0A, 0xFF, 0xFF, 0xFF};
-}
-
-static SolidColorBrush g_mediaHoverBrush   = nullptr;
-static SolidColorBrush g_mediaPressedBrush = nullptr;
-static SolidColorBrush g_playerHoverBrush   = nullptr;
-static SolidColorBrush g_playerPressedBrush = nullptr;
-static SolidColorBrush g_playerBorderBrush  = nullptr;
-static SolidColorBrush g_playerBorderPressedBrush = nullptr;
-
-static void EnsureHoverBrushes() {
-    if (!g_mediaHoverBrush) {
-        g_mediaHoverBrush   = SolidColorBrush(GetSystemButtonHoverColor(g_settings.mediaButtonsHoverEffectMode));
-        g_mediaPressedBrush = SolidColorBrush(GetSystemButtonPressedColor(g_settings.mediaButtonsHoverEffectMode));
-    }
-    if (!g_playerHoverBrush) {
-        g_playerHoverBrush   = SolidColorBrush(GetSystemButtonHoverColor(g_settings.playerHoverEffectMode));
-        g_playerPressedBrush = SolidColorBrush(GetSystemButtonPressedColor(g_settings.playerHoverEffectMode));
-        g_playerBorderBrush  = SolidColorBrush(GetSystemButtonBorderColor(g_settings.playerHoverEffectMode));
-        g_playerBorderPressedBrush = SolidColorBrush(GetSystemButtonBorderPressedColor(g_settings.playerHoverEffectMode));
-    }
-}
-
-static void UpdateHoverBrushColors() {
-    if (g_mediaHoverBrush) {
-        try { g_mediaHoverBrush.Color(GetSystemButtonHoverColor(g_settings.mediaButtonsHoverEffectMode)); } catch (...) {}
-    } else {
-        try { g_mediaHoverBrush = SolidColorBrush(GetSystemButtonHoverColor(g_settings.mediaButtonsHoverEffectMode)); } catch (...) {}
-    }
-    if (g_mediaPressedBrush) {
-        try { g_mediaPressedBrush.Color(GetSystemButtonPressedColor(g_settings.mediaButtonsHoverEffectMode)); } catch (...) {}
-    } else {
-        try { g_mediaPressedBrush = SolidColorBrush(GetSystemButtonPressedColor(g_settings.mediaButtonsHoverEffectMode)); } catch (...) {}
-    }
-
-    if (g_playerHoverBrush) {
-        try { g_playerHoverBrush.Color(GetSystemButtonHoverColor(g_settings.playerHoverEffectMode)); } catch (...) {}
-    } else {
-        try { g_playerHoverBrush = SolidColorBrush(GetSystemButtonHoverColor(g_settings.playerHoverEffectMode)); } catch (...) {}
-    }
-    if (g_playerPressedBrush) {
-        try { g_playerPressedBrush.Color(GetSystemButtonPressedColor(g_settings.playerHoverEffectMode)); } catch (...) {}
-    } else {
-        try { g_playerPressedBrush = SolidColorBrush(GetSystemButtonPressedColor(g_settings.playerHoverEffectMode)); } catch (...) {}
-    }
-    if (g_playerBorderBrush) {
-        try { g_playerBorderBrush.Color(GetSystemButtonBorderColor(g_settings.playerHoverEffectMode)); } catch (...) {}
-    } else {
-        try { g_playerBorderBrush = SolidColorBrush(GetSystemButtonBorderColor(g_settings.playerHoverEffectMode)); } catch (...) {}
-    }
-    if (g_playerBorderPressedBrush) {
-        try { g_playerBorderPressedBrush.Color(GetSystemButtonBorderPressedColor(g_settings.playerHoverEffectMode)); } catch (...) {}
-    } else {
-        try { g_playerBorderPressedBrush = SolidColorBrush(GetSystemButtonBorderPressedColor(g_settings.playerHoverEffectMode)); } catch (...) {}
-    }
 }
 
 static ObjectAnimationUsingKeyFrames MakeDiscreteObjectAnimation(
@@ -2746,23 +3470,31 @@ static void GoToCommonState(Button const& btn, bool effectEnabled, bool pressed,
     } catch (...) {}
 }
 
-static void RunWhenButtonReady(Button const& btn, std::function<void()> const& action) {
+static void RunWhenButtonReady(
+    Button const& btn,
+    std::function<void(Button const&)> const& action) {
     if (!btn || !action) return;
-    auto run = std::make_shared<std::function<void()>>(action);
-    auto invoke = [btn, run]() {
+    auto invoke = [action](Button const& button) {
         try {
-            btn.ApplyTemplate();
-            (*run)();
+            button.ApplyTemplate();
+            action(button);
         } catch (...) {}
     };
     try {
         if (btn.IsLoaded()) {
-            invoke();
+            invoke(btn);
         } else {
-            btn.Loaded([invoke](auto const&, auto const&) { invoke(); });
+            auto token = std::make_shared<winrt::event_token>();
+            *token = btn.Loaded(
+                [invoke, token](auto const& sender, auto const&) {
+                    auto button = sender.template try_as<Button>();
+                    if (!button) return;
+                    try { button.Loaded(*token); } catch (...) {}
+                    invoke(button);
+                });
         }
     } catch (...) {
-        invoke();
+        invoke(btn);
     }
 }
 
@@ -2775,12 +3507,17 @@ static void SetupMediaButtonCommonStates(Button const& btn) {
             transparent, transparent, transparent, transparent);
         return;
     }
-    EnsureHoverBrushes();
+    auto hoverBrush =
+        MakeBrush(GetSystemButtonHoverColor(
+            g_settings.mediaButtonsHoverEffectMode));
+    auto pressedBrush =
+        MakeBrush(GetSystemButtonPressedColor(
+            g_settings.mediaButtonsHoverEffectMode));
     SetupCommonStates(
         btn,
         transparent,
-        g_mediaHoverBrush,
-        g_mediaPressedBrush,
+        hoverBrush,
+        pressedBrush,
         transparent,
         transparent, transparent, transparent, transparent);
 }
@@ -2819,14 +3556,19 @@ static void SetupPlayerCommonStates(Button const& btn, Brush const& normalBg) {
             transparent, transparent, transparent, transparent);
         return;
     }
-    EnsureHoverBrushes();
+    auto hoverBrush =
+        MakeBrush(GetSystemButtonHoverColor(
+            g_settings.playerHoverEffectMode));
+    auto pressedBrush =
+        MakeBrush(GetSystemButtonPressedColor(
+            g_settings.playerHoverEffectMode));
     auto elevBorder        = MakeElevationBorderBrush(g_settings.playerHoverEffectMode);
     auto elevBorderPressed = MakeBrush(GetSystemButtonBorderPressedColor(g_settings.playerHoverEffectMode));
     SetupCommonStates(
         btn,
         normalBg,
-        g_playerHoverBrush,
-        g_playerPressedBrush,
+        hoverBrush,
+        pressedBrush,
         normalBg,
         transparent,
         elevBorder,
@@ -2845,7 +3587,7 @@ static bool DecodeImageToBGRA(const std::vector<BYTE>& imgBytes,
                                std::vector<BYTE>& outPixels,
                                int& outW, int& outH)
 {
-    if (imgBytes.empty()) return false;
+    if (imgBytes.empty() || imgBytes.size() > UINT_MAX) return false;
     IWICImagingFactory* pFactory = nullptr;
     if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
                                 CLSCTX_INPROC_SERVER,
@@ -2859,24 +3601,62 @@ static bool DecodeImageToBGRA(const std::vector<BYTE>& imgBytes,
             pStream, nullptr, WICDecodeMetadataCacheOnDemand, &pDecoder))) {
         IWICBitmapFrameDecode* pFrame = nullptr;
         if (SUCCEEDED(pDecoder->GetFrame(0, &pFrame))) {
+            UINT sourceWidth = 0;
+            UINT sourceHeight = 0;
+            IWICBitmapScaler* pScaler = nullptr;
+            IWICBitmapSource* source = pFrame;
+            if (SUCCEEDED(pFrame->GetSize(
+                    &sourceWidth, &sourceHeight)) &&
+                sourceWidth > 0 && sourceHeight > 0) {
+                constexpr UINT kDecodeLimit = 512;
+                if (sourceWidth > kDecodeLimit ||
+                    sourceHeight > kDecodeLimit) {
+                    double scale = std::min(
+                        static_cast<double>(kDecodeLimit) / sourceWidth,
+                        static_cast<double>(kDecodeLimit) / sourceHeight);
+                    UINT scaledWidth = std::max<UINT>(
+                        1, static_cast<UINT>(
+                               std::lround(sourceWidth * scale)));
+                    UINT scaledHeight = std::max<UINT>(
+                        1, static_cast<UINT>(
+                               std::lround(sourceHeight * scale)));
+                    if (SUCCEEDED(pFactory->CreateBitmapScaler(&pScaler)) &&
+                        SUCCEEDED(pScaler->Initialize(
+                            pFrame, scaledWidth, scaledHeight,
+                            WICBitmapInterpolationModeFant))) {
+                        source = pScaler;
+                    } else if (pScaler) {
+                        pScaler->Release();
+                        pScaler = nullptr;
+                    }
+                }
+            }
+
             IWICFormatConverter* pConv = nullptr;
-            if (SUCCEEDED(pFactory->CreateFormatConverter(&pConv))) {
+            if (sourceWidth > 0 && sourceHeight > 0 &&
+                SUCCEEDED(pFactory->CreateFormatConverter(&pConv))) {
                 if (SUCCEEDED(pConv->Initialize(
-                        pFrame, GUID_WICPixelFormat32bppBGRA,
+                        source, GUID_WICPixelFormat32bppBGRA,
                         WICBitmapDitherTypeNone, nullptr, 0.0,
                         WICBitmapPaletteTypeMedianCut))) {
                     UINT w = 0, h = 0;
-                    pConv->GetSize(&w, &h);
-                    if (w > 0 && h > 0) {
-                        outPixels.resize((size_t)w * h * 4);
+                    if (SUCCEEDED(pConv->GetSize(&w, &h)) &&
+                        w > 0 && h > 0 &&
+                        w <= 512 && h <= 512 &&
+                        static_cast<uint64_t>(w) * h <= 512ull * 512ull) {
+                        size_t byteCount =
+                            static_cast<size_t>(w) * h * 4;
+                        outPixels.resize(byteCount);
                         if (SUCCEEDED(pConv->CopyPixels(nullptr, w * 4,
-                                (UINT)outPixels.size(), outPixels.data()))) {
+                                static_cast<UINT>(byteCount),
+                                outPixels.data()))) {
                             outW = (int)w; outH = (int)h; ok = true;
                         }
                     }
                 }
                 pConv->Release();
             }
+            if (pScaler) pScaler->Release();
             pFrame->Release();
         }
         pDecoder->Release();
@@ -2959,17 +3739,19 @@ static void ApplyBoxBlurBGRA(std::vector<BYTE>& pixels, int w, int h, int radius
     }
 }
 
-static bool UpdateAlbumBlurBgCache(const std::vector<BYTE>& thumbBytes,
-                                    int targetW, int targetH)
+static bool UpdateAlbumBlurBgCache(BlurBgCache& cache,
+                                   const std::vector<BYTE>& thumbBytes,
+                                   int targetW, int targetH)
 {
     if (thumbBytes.empty() || targetW <= 0 || targetH <= 0) {
-        g_blurBgCache.Invalidate(); return false;
+        cache.Invalidate();
+        return false;
     }
     size_t artHash = 0;
     for (size_t i = 0; i < thumbBytes.size(); i += 512)
         artHash = artHash * 31 + thumbBytes[i];
-    if (g_blurBgCache.artHash == artHash && g_blurBgCache.width == targetW &&
-        g_blurBgCache.height == targetH && !g_blurBgCache.blurredPixels.empty())
+    if (cache.artHash == artHash && cache.width == targetW &&
+        cache.height == targetH && !cache.blurredPixels.empty())
         return true;
 
     std::vector<BYTE> srcPixels; int srcW = 0, srcH = 0;
@@ -2990,10 +3772,10 @@ static bool UpdateAlbumBlurBgCache(const std::vector<BYTE>& thumbBytes,
     std::vector<BYTE> blurred;
     DownsampleBGRA(small, smallW, smallH, blurred, targetW, targetH);
 
-    g_blurBgCache.blurredPixels = std::move(blurred);
-    g_blurBgCache.width   = targetW;
-    g_blurBgCache.height  = targetH;
-    g_blurBgCache.artHash = artHash;
+    cache.blurredPixels = std::move(blurred);
+    cache.width = targetW;
+    cache.height = targetH;
+    cache.artHash = artHash;
     return true;
 }
 
@@ -3166,11 +3948,12 @@ static const std::wstring& ContextMenuIconStyle() {
     return g_settings.iconStyle;
 }
 
-static Brush MakeAlbumBlurBrush(const std::vector<BYTE>& thumbBytes,
-                                  int panelW, int panelH)
+static Brush MakeAlbumBlurBrush(BlurBgCache& cache,
+                                const std::vector<BYTE>& thumbBytes,
+                                int panelW, int panelH)
 {
-    if (!UpdateAlbumBlurBgCache(thumbBytes, panelW, panelH) ||
-        g_blurBgCache.blurredPixels.empty())
+    if (!UpdateAlbumBlurBgCache(cache, thumbBytes, panelW, panelH) ||
+        cache.blurredPixels.empty())
         return MakeBrush({0x00, 0x00, 0x00, 0x00});
     try {
         size_t bytesNeeded = (size_t)panelW * panelH * 4;
@@ -3179,8 +3962,8 @@ static Brush MakeAlbumBlurBrush(const std::vector<BYTE>& thumbBytes,
         auto byteAccess = buf.as<Windows::Storage::Streams::IBufferByteAccess>();
         BYTE* pixels = nullptr;
         byteAccess->Buffer(&pixels);
-        if (pixels && g_blurBgCache.blurredPixels.size() >= bytesNeeded)
-            memcpy(pixels, g_blurBgCache.blurredPixels.data(), bytesNeeded);
+        if (pixels && cache.blurredPixels.size() >= bytesNeeded)
+            memcpy(pixels, cache.blurredPixels.data(), bytesNeeded);
         buf.Length(static_cast<uint32_t>(bytesNeeded));
         wb.Invalidate();
         ImageBrush brush;
@@ -3305,24 +4088,21 @@ static constexpr wchar_t kArtistBlockName[] = L"FluentMedia_Artist";
 static constexpr wchar_t kPlayBtnName[]     = L"FluentMedia_Play";
 static constexpr wchar_t kPrevBtnName[]     = L"FluentMedia_Prev";
 static constexpr wchar_t kNextBtnName[]     = L"FluentMedia_Next";
-static constexpr wchar_t kStopBtnName[]     = L"FluentMedia_Stop";
 static constexpr wchar_t kVolumeBtnName[]   = L"FluentMedia_Volume";
 static constexpr wchar_t kRewindBtnName[]   = L"FluentMedia_Rewind";
 static constexpr wchar_t kForwardBtnName[]  = L"FluentMedia_Forward";
 static constexpr wchar_t kShuffleBtnName[]  = L"FluentMedia_Shuffle";
 static constexpr wchar_t kRepeatBtnName[]   = L"FluentMedia_Repeat";
-static constexpr wchar_t kSwitchSessionsBtnName[] = L"FluentMedia_SwitchSessions";
 
 static int  g_idleSeconds  = 0;
 static int  g_idleTicks    = 0;
 static bool g_hiddenByIdle = false;
 static std::chrono::steady_clock::time_point g_lastMediaTime = std::chrono::steady_clock::now();
 
-static void SwitchMediaSession();
 static void ShowAppVolumeFlyout(FrameworkElement const& target);
 
 static void SendMediaCommandAsync(int cmd) {
-    std::thread([cmd]() {
+    QueueAsyncTask([cmd]() {
         if (g_unloading) return;
         winrt::init_apartment(winrt::apartment_type::multi_threaded);
         try {
@@ -3330,31 +4110,20 @@ static void SendMediaCommandAsync(int cmd) {
             { std::lock_guard<std::mutex> lk(g_sessionMtx); session = g_currentSession; }
             if (session) {
                 switch (cmd) {
-                    case 1: session.TrySkipPreviousAsync().get();    break;
-                    case 2: session.TryTogglePlayPauseAsync().get(); break;
-                    case 3: session.TrySkipNextAsync().get();        break;
-                    case 4:
-                        try {
-                            Wh_Log(L"SendMediaCommandAsync: Attempting to stop playback");
-
-                            auto result = session.TryStopAsync().get();
-                            Wh_Log(L"SendMediaCommandAsync: TryStopAsync returned %d", result);
-
-                            if (!result) {
-                                Wh_Log(L"SendMediaCommandAsync: Stop not supported, using pause + seek fallback");
-                                session.TryPauseAsync().get();
-                                session.TryChangePlaybackPositionAsync(0).get();
-                            }
-                        } catch (...) {
-                            Wh_Log(L"SendMediaCommandAsync: Stop failed, trying pause + seek fallback");
-
-                            try {
-                                session.TryPauseAsync().get();
-                                session.TryChangePlaybackPositionAsync(0).get();
-                            } catch (...) {
-                                Wh_Log(L"SendMediaCommandAsync: Fallback also failed");
-                            }
-                        }
+                    case 1:
+                        WaitForWinrtOperation(
+                            session.TrySkipPreviousAsync(), 3000,
+                            L"Previous-track command");
+                        break;
+                    case 2:
+                        WaitForWinrtOperation(
+                            session.TryTogglePlayPauseAsync(), 3000,
+                            L"Play/pause command");
+                        break;
+                    case 3:
+                        WaitForWinrtOperation(
+                            session.TrySkipNextAsync(), 3000,
+                            L"Next-track command");
                         break;
                     case 5:
                         try {
@@ -3362,7 +4131,10 @@ static void SendMediaCommandAsync(int cmd) {
                             auto currentPos = timeline.Position();
                             auto newPos = currentPos - std::chrono::seconds(5);
                             if (newPos.count() < 0) newPos = std::chrono::seconds(0);
-                            session.TryChangePlaybackPositionAsync(newPos.count()).get();
+                            WaitForWinrtOperation(
+                                session.TryChangePlaybackPositionAsync(
+                                    newPos.count()),
+                                3000, L"Rewind command");
                         } catch (...) {}
                         break;
                     case 6:
@@ -3372,13 +4144,20 @@ static void SendMediaCommandAsync(int cmd) {
                             auto endTime = timeline.EndTime();
                             auto newPos = currentPos + std::chrono::seconds(5);
                             if (newPos > endTime) newPos = endTime;
-                            session.TryChangePlaybackPositionAsync(newPos.count()).get();
+                            WaitForWinrtOperation(
+                                session.TryChangePlaybackPositionAsync(
+                                    newPos.count()),
+                                3000, L"Forward command");
                         } catch (...) {}
                         break;
                     case 7:
                         try {
                             bool currentShuffle = g_shuffleEnabled.load();
-                            if (session.TryChangeShuffleActiveAsync(!currentShuffle).get()) {
+                            auto changed = WaitForWinrtOperation(
+                                session.TryChangeShuffleActiveAsync(
+                                    !currentShuffle),
+                                3000, L"Shuffle command");
+                            if (changed.value_or(false)) {
                                 g_shuffleEnabled = !currentShuffle;
                                 DispatchMediaUpdate();
                             }
@@ -3406,18 +4185,23 @@ static void SendMediaCommandAsync(int cmd) {
                                     break;
                             }
 
-                            if (session.TryChangeAutoRepeatModeAsync(mode).get()) {
+                            auto changed = WaitForWinrtOperation(
+                                session.TryChangeAutoRepeatModeAsync(mode),
+                                3000, L"Repeat command");
+                            if (changed.value_or(false)) {
                                 g_repeatMode = next;
                                 DispatchMediaUpdate();
                             }
                         } catch (...) {}
                         break;
-                    case 9:
-                        SwitchMediaSession();
-                        break;
                     case 10:
                         try {
-                            if (session.TryChangeAutoRepeatModeAsync(winrt::Windows::Media::MediaPlaybackAutoRepeatMode::None).get()) {
+                            auto changed = WaitForWinrtOperation(
+                                session.TryChangeAutoRepeatModeAsync(
+                                    winrt::Windows::Media::
+                                        MediaPlaybackAutoRepeatMode::None),
+                                3000, L"Repeat-off command");
+                            if (changed.value_or(false)) {
                                 g_repeatMode = RepeatMode::Off;
                                 DispatchMediaUpdate();
                             }
@@ -3425,7 +4209,12 @@ static void SendMediaCommandAsync(int cmd) {
                         break;
                     case 11:
                         try {
-                            if (session.TryChangeAutoRepeatModeAsync(winrt::Windows::Media::MediaPlaybackAutoRepeatMode::List).get()) {
+                            auto changed = WaitForWinrtOperation(
+                                session.TryChangeAutoRepeatModeAsync(
+                                    winrt::Windows::Media::
+                                        MediaPlaybackAutoRepeatMode::List),
+                                3000, L"Repeat-all command");
+                            if (changed.value_or(false)) {
                                 g_repeatMode = RepeatMode::All;
                                 DispatchMediaUpdate();
                             }
@@ -3433,7 +4222,12 @@ static void SendMediaCommandAsync(int cmd) {
                         break;
                     case 12:
                         try {
-                            if (session.TryChangeAutoRepeatModeAsync(winrt::Windows::Media::MediaPlaybackAutoRepeatMode::Track).get()) {
+                            auto changed = WaitForWinrtOperation(
+                                session.TryChangeAutoRepeatModeAsync(
+                                    winrt::Windows::Media::
+                                        MediaPlaybackAutoRepeatMode::Track),
+                                3000, L"Repeat-one command");
+                            if (changed.value_or(false)) {
                                 g_repeatMode = RepeatMode::One;
                                 DispatchMediaUpdate();
                             }
@@ -3443,22 +4237,14 @@ static void SendMediaCommandAsync(int cmd) {
             }
         } catch (...) {}
         winrt::uninit_apartment();
-    }).detach();
+    });
 }
 
-struct TextScrollState {
-    double offset    = 0.0;
-    double textWidth = 0.0;
-    double viewWidth = 0.0;
-    bool   forward   = true;
-    bool   active    = false;
-    bool   pausing   = false;
-    int    pauseTick = 0;
-    int    tickMs    = 16;
-};
-
-static TextScrollState g_titleScroll;
-static TextScrollState g_artistScroll;
+static TextScrollState& g_titleScroll =
+    g_primaryVisualState->titleScroll;
+static TextScrollState& g_artistScroll =
+    g_primaryVisualState->artistScroll;
+static std::atomic<bool> g_scrollResetRequested{false};
 
 static void ResetScrollState(TextScrollState& s);
 
@@ -3466,36 +4252,22 @@ static void FetchMediaPropertiesAsync();
 static void FetchPlaybackInfoAsync();
 static void OnSessionsChanged();
 static void AttachToSession(GlobalSystemMediaTransportControlsSession session);
-static void SwitchMediaSession();
+static bool IsIgnoredMediaApp(const std::wstring& appUserModelId);
+static std::wstring ToLowerCopy(std::wstring value);
 
-static void SwitchMediaSession() {
-    GlobalSystemMediaTransportControlsSession nextSession{nullptr};
+static void SelectMediaSource(const std::wstring& appId, bool persist) {
+    StorePreferredMediaApp(appId);
+    if (persist) {
+        Wh_SetStringValue(L"quickPreferredMediaApp", appId.c_str());
+        Wh_SetIntValue(L"quickMediaSourceOverride", 1);
+    }
+
     {
-        std::lock_guard<std::mutex> lk(g_sessionMtx);
-        if (!g_sessionMgr) return;
-        g_userSwitchedSession = true;
-        try {
-            auto sessions = g_sessionMgr.GetSessions();
-            int count = (int)sessions.Size();
-            if (count <= 1) return;
-
-            int currentIndex = -1;
-            if (g_currentSession) {
-                auto curId = g_currentSession.SourceAppUserModelId();
-                for (int i = 0; i < count; ++i) {
-                    if (sessions.GetAt(i).SourceAppUserModelId() == curId) {
-                        currentIndex = i;
-                        break;
-                    }
-                }
-            }
-            int nextIndex = (currentIndex + 1) % count;
-            nextSession = sessions.GetAt(nextIndex);
-        } catch (...) { return; }
+        std::lock_guard<std::mutex> lock(g_sessionMtx);
+        g_userSwitchedSession = !appId.empty();
     }
-    if (nextSession) {
-        AttachToSession(nextSession);
-    }
+    g_forceSessionRefresh = true;
+    RequestMediaSessionRefresh();
 }
 
 static std::wstring ToLowerCopy(std::wstring value);
@@ -3752,8 +4524,6 @@ static void ExecuteMediaAction(const std::wstring& action, FrameworkElement cons
             ShowMediaContextMenu(sourceElement);
         }
         return;
-    } else if (action == L"switch_session") {
-        SwitchMediaSession();
     } else if (action == L"play_pause") {
         SendMediaCommandAsync(2);
         DispatchMediaUpdate();
@@ -3763,20 +4533,6 @@ static void ExecuteMediaAction(const std::wstring& action, FrameworkElement cons
     } else if (action == L"prev_track") {
         SendMediaCommandAsync(1);
         DispatchMediaUpdate();
-    } else if (action == L"stop") {
-        g_forceSessionRefresh = true;
-        SendMediaCommandAsync(4);
-        DispatchMediaUpdate();
-        std::thread([]() {
-            for (DWORD delay : {300, 1200, 2500}) {
-                Sleep(delay);
-                if (g_unloading) return;
-                g_forceSessionRefresh = true;
-                OnSessionsChanged();
-                FetchPlaybackInfoAsync();
-                FetchMediaPropertiesAsync();
-            }
-        }).detach();
     } else if (action == L"rewind_5s") {
         SendMediaCommandAsync(5);
         DispatchMediaUpdate();
@@ -3789,8 +4545,8 @@ static void ExecuteMediaAction(const std::wstring& action, FrameworkElement cons
     } else if (action == L"toggle_repeat") {
         SendMediaCommandAsync(8);
         DispatchMediaUpdate();
-} else if (action == L"open_app") {
-        std::thread([]() {
+    } else if (action == L"open_app") {
+        QueueAsyncTask([]() {
             std::wstring title, appAumid;
             {
                 std::lock_guard<std::mutex> lk(g_mediaMtx);
@@ -3919,7 +4675,7 @@ static void ExecuteMediaAction(const std::wstring& action, FrameworkElement cons
                 ShellExecuteW(nullptr, L"open", shellPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
             }
 
-        }).detach();
+        });
     }
 }
 
@@ -3940,6 +4696,11 @@ static HWND g_volumePopupWindow = nullptr;
 static HWND g_volumePopupPercent = nullptr;
 static std::wstring g_volumePopupAppUserModelId;
 static HBRUSH g_volumePopupBrush = nullptr;
+static HMODULE g_modModuleHandle = nullptr;
+static HMODULE g_lifecycleSafetyModulePin = nullptr;
+static bool g_volumePopupClassRegistered = false;
+static constexpr wchar_t kVolumePopupClass[] =
+    L"TaskbarMediaPresenceVolumePopup_v100";
 static constexpr UINT kVolumeStateChangedMessage = WM_APP + 0x431;
 static constexpr int kVolumeTrackCenterX = 42;
 static constexpr int kVolumeTrackTop = 34;
@@ -3950,6 +4711,26 @@ static bool g_volumePopupEnabled = false;
 static std::atomic<int> g_currentVolumePercent{-1};
 static std::atomic<bool> g_currentVolumeMuted{false};
 static std::atomic<bool> g_musicBeeVolumeBridgeAvailable{false};
+
+static bool PinModuleForOutstandingCallbacks(PCWSTR reason) {
+    if (g_lifecycleSafetyModulePin) return true;
+
+    HMODULE module = nullptr;
+    if (!GetModuleHandleExW(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                GET_MODULE_HANDLE_EX_FLAG_PIN,
+            reinterpret_cast<LPCWSTR>(&PinModuleForOutstandingCallbacks),
+            &module)) {
+        Wh_Log(L"Lifecycle safety: failed to pin module for %s (%u)",
+               reason ? reason : L"unknown callback", GetLastError());
+        return false;
+    }
+
+    g_lifecycleSafetyModulePin = module;
+    Wh_Log(L"Lifecycle safety: retaining module for %s",
+           reason ? reason : L"an outstanding callback");
+    return true;
+}
 
 static std::wstring CurrentMediaAppUserModelId() {
     std::wstring appUserModelId;
@@ -4020,30 +4801,88 @@ static void PublishVolumeState(int percent, bool muted) {
 }
 
 static bool ExchangeMusicBeeVolumeBridge(const char* request,
-                                          int& percent, bool& muted) {
+                                          int& percent, bool& muted,
+                                          DWORD totalTimeoutMs) {
     static constexpr wchar_t kPipeName[] =
         L"\\\\.\\pipe\\TaskbarMediaPresence.MusicBeeVolume.v1";
+    totalTimeoutMs = std::max<DWORD>(totalTimeoutMs, 50);
+    const ULONGLONG deadline = GetTickCount64() + totalTimeoutMs;
+    auto remainingTime = [deadline]() -> DWORD {
+        ULONGLONG now = GetTickCount64();
+        return now < deadline
+            ? static_cast<DWORD>(deadline - now)
+            : 0;
+    };
 
-    HANDLE pipe = CreateFileW(kPipeName, GENERIC_READ | GENERIC_WRITE,
-                              0, nullptr, OPEN_EXISTING, 0, nullptr);
-    if (pipe == INVALID_HANDLE_VALUE && GetLastError() == ERROR_PIPE_BUSY &&
-        WaitNamedPipeW(kPipeName, 40)) {
+    HANDLE pipe = INVALID_HANDLE_VALUE;
+    while (remainingTime() > 0) {
         pipe = CreateFileW(kPipeName, GENERIC_READ | GENERIC_WRITE,
-                           0, nullptr, OPEN_EXISTING, 0, nullptr);
+                           0, nullptr, OPEN_EXISTING,
+                           FILE_FLAG_OVERLAPPED, nullptr);
+        if (pipe != INVALID_HANDLE_VALUE) break;
+
+        DWORD error = GetLastError();
+        DWORD remaining = remainingTime();
+        if (!remaining) break;
+        if (error == ERROR_PIPE_BUSY) {
+            WaitNamedPipeW(kPipeName, std::min<DWORD>(remaining, 100));
+            continue;
+        }
+        // The companion creates its pipe shortly after MusicBee finishes
+        // plugin startup. Interactive operations run on background workers, so
+        // they can tolerate a short retry window; the periodic poll uses a
+        // 250-ms total budget and stays responsive.
+        if (error == ERROR_FILE_NOT_FOUND && totalTimeoutMs > 250) {
+            Sleep(std::min<DWORD>(remaining, 40));
+            continue;
+        }
+        break;
     }
     if (pipe == INVALID_HANDLE_VALUE) {
         g_musicBeeVolumeBridgeAvailable = false;
         return false;
     }
 
+    auto transferWithTimeout = [pipe, &remainingTime](
+                                   bool write, void* buffer, DWORD size,
+                                   DWORD& transferred) {
+        OVERLAPPED overlapped{};
+        overlapped.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (!overlapped.hEvent) return false;
+
+        BOOL started = write
+            ? WriteFile(pipe, buffer, size, &transferred, &overlapped)
+            : ReadFile(pipe, buffer, size, &transferred, &overlapped);
+        bool success = started != FALSE;
+        if (!success && GetLastError() == ERROR_IO_PENDING) {
+            DWORD remaining = remainingTime();
+            DWORD waitResult = remaining
+                ? WaitForSingleObject(overlapped.hEvent, remaining)
+                : WAIT_TIMEOUT;
+            if (waitResult == WAIT_OBJECT_0) {
+                success = GetOverlappedResult(
+                    pipe, &overlapped, &transferred, FALSE) != FALSE;
+            } else {
+                CancelIoEx(pipe, &overlapped);
+                GetOverlappedResult(pipe, &overlapped, &transferred, TRUE);
+                success = false;
+            }
+        }
+        CloseHandle(overlapped.hEvent);
+        return success;
+    };
+
     DWORD written = 0;
     DWORD requestLength = static_cast<DWORD>(strlen(request));
-    bool success = WriteFile(pipe, request, requestLength, &written, nullptr) &&
+    bool success = transferWithTimeout(
+                       true, const_cast<char*>(request), requestLength,
+                       written) &&
                    written == requestLength;
     char response[96]{};
     DWORD read = 0;
     if (success) {
-        success = ReadFile(pipe, response, sizeof(response) - 1, &read, nullptr) != FALSE;
+        success = transferWithTimeout(
+            false, response, sizeof(response) - 1, read);
     }
     CloseHandle(pipe);
     if (!success) {
@@ -4059,16 +4898,28 @@ static bool ExchangeMusicBeeVolumeBridge(const char* request,
     percent = std::clamp(percent, 0, 100);
     muted = muteValue != 0;
     g_musicBeeVolumeBridgeAvailable = true;
-    PublishVolumeState(percent, muted);
     return true;
 }
 
-static bool GetCurrentControllableVolume(int& percent, bool& muted) {
-    std::wstring appUserModelId = CurrentMediaAppUserModelId();
+static bool IsCurrentMediaApp(const std::wstring& appUserModelId) {
+    return !appUserModelId.empty() &&
+           _wcsicmp(CurrentMediaAppUserModelId().c_str(),
+                    appUserModelId.c_str()) == 0;
+}
+
+static bool GetControllableVolumeForApp(
+    const std::wstring& appUserModelId, int& percent, bool& muted,
+    DWORD musicBeeTimeoutMs = 2250) {
     if (appUserModelId.empty()) return false;
 
     if (IsMusicBeeAppId(appUserModelId)) {
-        return ExchangeMusicBeeVolumeBridge("GET\n", percent, muted);
+        bool success =
+            ExchangeMusicBeeVolumeBridge(
+                "GET\n", percent, muted, musicBeeTimeoutMs);
+        if (success && IsCurrentMediaApp(appUserModelId)) {
+            PublishVolumeState(percent, muted);
+        }
+        return success;
     }
 
     float volume = 0.0f;
@@ -4077,13 +4928,20 @@ static bool GetCurrentControllableVolume(int& percent, bool& muted) {
     GetAppMuteByAUMID(appUserModelId, appMuted);
     percent = std::clamp((int)std::lround(volume * 100.0f), 0, 100);
     muted = appMuted;
-    PublishVolumeState(percent, muted);
+    if (IsCurrentMediaApp(appUserModelId)) {
+        PublishVolumeState(percent, muted);
+    }
     return true;
 }
 
-static bool SetCurrentControllableVolume(int requestedPercent) {
+static bool GetCurrentControllableVolume(int& percent, bool& muted) {
+    return GetControllableVolumeForApp(
+        CurrentMediaAppUserModelId(), percent, muted, 250);
+}
+
+static bool SetControllableVolumeForApp(
+    const std::wstring& appUserModelId, int requestedPercent) {
     requestedPercent = std::clamp(requestedPercent, 0, 100);
-    std::wstring appUserModelId = CurrentMediaAppUserModelId();
     if (appUserModelId.empty()) return false;
 
     if (IsMusicBeeAppId(appUserModelId)) {
@@ -4091,7 +4949,13 @@ static bool SetCurrentControllableVolume(int requestedPercent) {
         std::snprintf(request, sizeof(request), "SET %d\n", requestedPercent);
         int actualPercent = requestedPercent;
         bool muted = false;
-        return ExchangeMusicBeeVolumeBridge(request, actualPercent, muted);
+        bool success =
+            ExchangeMusicBeeVolumeBridge(
+                request, actualPercent, muted, 2250);
+        if (success && IsCurrentMediaApp(appUserModelId)) {
+            PublishVolumeState(actualPercent, muted);
+        }
+        return success;
     }
 
     bool changed = SetAppVolumeByAUMID(
@@ -4099,8 +4963,71 @@ static bool SetCurrentControllableVolume(int requestedPercent) {
     if (changed && requestedPercent > 0) {
         SetAppMuteByAUMID(appUserModelId, false);
     }
-    if (changed) PublishVolumeState(requestedPercent, false);
+    if (changed && IsCurrentMediaApp(appUserModelId)) {
+        PublishVolumeState(requestedPercent, false);
+    }
     return changed;
+}
+
+static std::mutex g_pendingVolumeSetMtx;
+static std::wstring g_pendingVolumeSetApp;
+static int g_pendingVolumeSetPercent = 0;
+static uint64_t g_pendingVolumeSetGeneration = 0;
+static bool g_volumeSetWorkerRunning = false;
+
+static bool QueueControllableVolumeSet(
+    const std::wstring& appUserModelId, int requestedPercent) {
+    if (appUserModelId.empty()) return false;
+    {
+        std::lock_guard<std::mutex> lock(g_pendingVolumeSetMtx);
+        g_pendingVolumeSetApp = appUserModelId;
+        g_pendingVolumeSetPercent =
+            std::clamp(requestedPercent, 0, 100);
+        ++g_pendingVolumeSetGeneration;
+        if (g_volumeSetWorkerRunning) return true;
+        g_volumeSetWorkerRunning = true;
+    }
+
+    bool queued = QueueAsyncTask([]() {
+        HRESULT apartmentResult =
+            CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        while (!g_unloading) {
+            std::wstring appUserModelId;
+            int requestedPercent = 0;
+            uint64_t generation = 0;
+            {
+                std::lock_guard<std::mutex> lock(g_pendingVolumeSetMtx);
+                appUserModelId = g_pendingVolumeSetApp;
+                requestedPercent = g_pendingVolumeSetPercent;
+                generation = g_pendingVolumeSetGeneration;
+            }
+
+            bool changed = SetControllableVolumeForApp(
+                appUserModelId, requestedPercent);
+            if (!changed) {
+                int actualPercent = 0;
+                bool muted = false;
+                GetControllableVolumeForApp(
+                    appUserModelId, actualPercent, muted);
+            }
+
+            std::lock_guard<std::mutex> lock(g_pendingVolumeSetMtx);
+            if (generation == g_pendingVolumeSetGeneration) {
+                g_volumeSetWorkerRunning = false;
+                break;
+            }
+        }
+        if (g_unloading) {
+            std::lock_guard<std::mutex> lock(g_pendingVolumeSetMtx);
+            g_volumeSetWorkerRunning = false;
+        }
+        if (SUCCEEDED(apartmentResult)) CoUninitialize();
+    });
+    if (!queued) {
+        std::lock_guard<std::mutex> lock(g_pendingVolumeSetMtx);
+        g_volumeSetWorkerRunning = false;
+    }
+    return queued;
 }
 
 static std::wstring FindMatchingAudioProcessPath(
@@ -4132,7 +5059,8 @@ static bool SendMusicBeeVolumeStep(const std::wstring& appUserModelId,
         (increase ? L"/VolumeUp" : L"/VolumeDown");
     std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
     mutableCommand.push_back(L'\0');
-    STARTUPINFOW startup{sizeof(startup)};
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
     PROCESS_INFORMATION processInfo{};
     bool started = CreateProcessW(executable.c_str(), mutableCommand.data(),
                                   nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
@@ -4148,15 +5076,17 @@ static void AdjustCurrentMediaAppVolumeAsync(int wheelDelta) {
     std::wstring appUserModelId = CurrentMediaAppUserModelId();
     if (appUserModelId.empty() || wheelDelta == 0) return;
     bool increase = wheelDelta > 0;
-    std::thread([appUserModelId, increase]() {
+    QueueAsyncTask([appUserModelId, increase]() {
         HRESULT apartmentResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
         bool changed = false;
         if (IsMusicBeeAppId(appUserModelId)) {
             int percent = 0;
             bool muted = false;
-            if (ExchangeMusicBeeVolumeBridge("GET\n", percent, muted)) {
+            if (GetControllableVolumeForApp(
+                    appUserModelId, percent, muted)) {
                 int next = std::clamp(percent + (increase ? 2 : -2), 0, 100);
-                changed = SetCurrentControllableVolume(next);
+                changed = SetControllableVolumeForApp(
+                    appUserModelId, next);
             } else {
                 // The official command-line fallback still changes MusicBee's
                 // internal player volume, but only in MusicBee's 10% steps.
@@ -4168,7 +5098,8 @@ static void AdjustCurrentMediaAppVolumeAsync(int wheelDelta) {
             if (changed) {
                 int percent = 0;
                 bool muted = false;
-                GetCurrentControllableVolume(percent, muted);
+                GetControllableVolumeForApp(
+                    appUserModelId, percent, muted);
             }
         }
         if (!changed) {
@@ -4176,7 +5107,7 @@ static void AdjustCurrentMediaAppVolumeAsync(int wheelDelta) {
                    appUserModelId.c_str());
         }
         if (SUCCEEDED(apartmentResult)) CoUninitialize();
-    }).detach();
+    });
 }
 
 static void UpdateVolumePopupPercent(int volumePercent) {
@@ -4218,7 +5149,8 @@ static void SetPopupVolumeFromY(HWND window, int y) {
 
     int previous = g_volumePopupValue;
     UpdateVolumePopupPercent(requested);
-    if (!SetCurrentControllableVolume(requested)) {
+    if (!QueueControllableVolumeSet(
+            g_volumePopupAppUserModelId, requested)) {
         UpdateVolumePopupPercent(previous);
     }
     InvalidateRect(window, nullptr, FALSE);
@@ -4241,15 +5173,11 @@ static LRESULT CALLBACK VolumePopupWindowProc(HWND window, UINT message,
                 10, 154, 64, 22, window, nullptr, GetModuleHandleW(nullptr), nullptr);
             SendMessageW(g_volumePopupPercent, WM_SETFONT, (WPARAM)font, TRUE);
 
-            int volumePercent = std::max(g_currentVolumePercent.load(), 0);
-            bool muted = g_currentVolumeMuted.load();
-            bool hasVolumeControl = GetCurrentControllableVolume(
-                volumePercent, muted);
-            g_volumePopupEnabled = hasVolumeControl;
+            int volumePercent = g_currentVolumePercent.load();
+            if (volumePercent < 0) volumePercent = 100;
+            g_volumePopupEnabled =
+                !g_volumePopupAppUserModelId.empty();
             UpdateVolumePopupPercent(volumePercent);
-            if (!hasVolumeControl && IsMusicBeeAppId(g_volumePopupAppUserModelId)) {
-                SetWindowTextW(titleLabel, L"Install bridge");
-            }
             SetTimer(window, 2001, 120, nullptr);
             return 0;
         }
@@ -4286,9 +5214,9 @@ static LRESULT CALLBACK VolumePopupWindowProc(HWND window, UINT message,
                     g_volumePopupValue +
                     (GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? 2 : -2),
                     0, 100);
-                if (SetCurrentControllableVolume(next)) {
-                    UpdateVolumePopupPercent(g_currentVolumePercent.load());
-                }
+                UpdateVolumePopupPercent(next);
+                QueueControllableVolumeSet(
+                    g_volumePopupAppUserModelId, next);
             }
             return 0;
         case kVolumeStateChangedMessage:
@@ -4375,31 +5303,98 @@ static LRESULT CALLBACK VolumePopupWindowProc(HWND window, UINT message,
     return DefWindowProcW(window, message, wParam, lParam);
 }
 
-static void DestroyVolumePopup() {
-    if (g_volumePopupWindow && IsWindow(g_volumePopupWindow)) {
-        DWORD windowThread = GetWindowThreadProcessId(g_volumePopupWindow, nullptr);
-        if (windowThread == GetCurrentThreadId()) {
-            DestroyWindow(g_volumePopupWindow);
-        } else {
-            PostMessageW(g_volumePopupWindow, WM_CLOSE, 0, 0);
+static bool DestroyVolumePopup(bool shutdownCleanup = false) {
+    HWND window = g_volumePopupWindow;
+    if (!window || !IsWindow(window)) {
+        if (g_volumePopupWindow == window) {
+            g_volumePopupWindow = nullptr;
+            g_volumePopupPercent = nullptr;
+            g_volumePopupDragging = false;
+            g_volumePopupEnabled = false;
         }
+        return true;
     }
+
+    struct PopupDestroyWork {
+        HWND window;
+        bool destroyed = false;
+    } work{window};
+
+    auto destroy = [](void* parameter) {
+        auto* workItem = static_cast<PopupDestroyWork*>(parameter);
+        if (!IsWindow(workItem->window)) {
+            workItem->destroyed = true;
+            return;
+        }
+        workItem->destroyed = DestroyWindow(workItem->window) != FALSE;
+    };
+
+    bool dispatched = false;
+    DWORD windowThread = GetWindowThreadProcessId(window, nullptr);
+    if (windowThread == GetCurrentThreadId()) {
+        dispatched = InvokeWindowThreadProcSafely(destroy, &work);
+    } else if (shutdownCleanup) {
+        dispatched = RunFromWindowThreadForCleanup(window, destroy, &work);
+    } else {
+        dispatched = RunFromWindowThread(window, destroy, &work);
+    }
+
+    bool gone = !IsWindow(window) || g_volumePopupWindow != window;
+    if (!dispatched || !work.destroyed || !gone) {
+        Wh_Log(L"DestroyVolumePopup: owner-thread destruction was not confirmed");
+        return false;
+    }
+    return true;
+}
+
+static bool UnregisterVolumePopupClassConfirmed() {
+    if (g_volumePopupWindow && IsWindow(g_volumePopupWindow)) return false;
+    if (!g_volumePopupClassRegistered) return true;
+    if (!g_modModuleHandle) return false;
+
+    SetLastError(ERROR_SUCCESS);
+    if (UnregisterClassW(kVolumePopupClass, g_modModuleHandle)) {
+        g_volumePopupClassRegistered = false;
+        return true;
+    }
+
+    DWORD error = GetLastError();
+    if (error == ERROR_CLASS_DOES_NOT_EXIST) {
+        g_volumePopupClassRegistered = false;
+        return true;
+    }
+
+    Wh_Log(L"Volume popup: class unregister wasn't confirmed (%u)", error);
+    return false;
 }
 
 static void ShowAppVolumeFlyout(FrameworkElement const& target) {
     if (!target || g_unloading) return;
+    if (g_volumePopupWindow && IsWindow(g_volumePopupWindow)) {
+        DestroyVolumePopup();
+        return;
+    }
     g_volumePopupAppUserModelId = CurrentMediaAppUserModelId();
     if (g_volumePopupAppUserModelId.empty()) return;
 
-    DestroyVolumePopup();
-    static constexpr wchar_t kVolumePopupClass[] =
-        L"TaskbarMediaPresenceVolumePopup_v070";
-    WNDCLASSEXW windowClass{sizeof(windowClass)};
+    if (!g_modModuleHandle) {
+        GetModuleHandleExW(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCWSTR>(&VolumePopupWindowProc),
+            &g_modModuleHandle);
+    }
+    if (!g_modModuleHandle) return;
+
+    WNDCLASSEXW windowClass{};
+    windowClass.cbSize = sizeof(windowClass);
     windowClass.lpfnWndProc = VolumePopupWindowProc;
-    windowClass.hInstance = GetModuleHandleW(nullptr);
+    windowClass.hInstance = g_modModuleHandle;
     windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     windowClass.lpszClassName = kVolumePopupClass;
-    RegisterClassExW(&windowClass);
+    ATOM popupClass = RegisterClassExW(&windowClass);
+    if (!popupClass && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return;
+    g_volumePopupClassRegistered = true;
 
     if (!g_volumePopupBrush) {
         g_volumePopupBrush = CreateSolidBrush(RGB(36, 36, 40));
@@ -4409,7 +5404,8 @@ static void ShowAppVolumeFlyout(FrameworkElement const& target) {
     constexpr int popupHeight = 184;
     POINT cursor{};
     GetCursorPos(&cursor);
-    MONITORINFO monitorInfo{sizeof(monitorInfo)};
+    MONITORINFO monitorInfo{};
+    monitorInfo.cbSize = sizeof(monitorInfo);
     GetMonitorInfoW(MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST), &monitorInfo);
     int x = std::clamp(cursor.x - popupWidth / 2,
                        monitorInfo.rcWork.left,
@@ -4423,7 +5419,7 @@ static void ShowAppVolumeFlyout(FrameworkElement const& target) {
         WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
         kVolumePopupClass, L"Media app volume", WS_POPUP,
         x, y, popupWidth, popupHeight, g_taskbarWnd, nullptr,
-        GetModuleHandleW(nullptr), nullptr);
+        g_modModuleHandle, nullptr);
     if (!g_volumePopupWindow) return;
 
     const int cornerPreference = 2;
@@ -4601,6 +5597,16 @@ static std::vector<BYTE> RenderIconToBytes(HICON hIcon, int iconSize) {
     return dst;
 }
 
+static HICON QueryWindowIconWithTimeout(HWND window, WPARAM iconType) {
+    DWORD_PTR result = 0;
+    if (!SendMessageTimeoutW(
+            window, WM_GETICON, iconType, 0,
+            SMTO_ABORTIFHUNG | SMTO_BLOCK, 200, &result)) {
+        return nullptr;
+    }
+    return reinterpret_cast<HICON>(result);
+}
+
 static std::vector<BYTE> FetchAppIconBytes(const std::wstring& appUserModelId, int iconSize) {
     std::vector<BYTE> result;
     if (appUserModelId.empty()) return result;
@@ -4636,7 +5642,8 @@ static std::vector<BYTE> FetchAppIconBytes(const std::wstring& appUserModelId, i
             std::wstring exactPath;
             std::wstring fuzzyPath;
         };
-        EnumCtx ctx{ &appUserModelId };
+        EnumCtx ctx{};
+        ctx.aumid = &appUserModelId;
 
         EnumWindows([](HWND hWnd, LPARAM lParam) CALLBACK -> BOOL {
             if (!IsWindowVisible(hWnd)) return TRUE;
@@ -4651,8 +5658,8 @@ static std::vector<BYTE> FetchAppIconBytes(const std::wstring& appUserModelId, i
                         std::wstring winAumid  = ToLowerCopy(std::wstring(var.pwszVal));
                         std::wstring wantAumid = ToLowerCopy(*c->aumid);
                         if (winAumid == wantAumid) {
-                            HICON icon = (HICON)SendMessageW(hWnd, WM_GETICON, ICON_BIG,   0);
-                            if (!icon) icon = (HICON)SendMessageW(hWnd, WM_GETICON, ICON_SMALL, 0);
+                            HICON icon = QueryWindowIconWithTimeout(hWnd, ICON_BIG);
+                            if (!icon) icon = QueryWindowIconWithTimeout(hWnd, ICON_SMALL);
                             if (!icon) icon = (HICON)GetClassLongPtrW(hWnd, GCLP_HICON);
                             if (!icon) icon = (HICON)GetClassLongPtrW(hWnd, GCLP_HICONSM);
                             if (icon) {
@@ -4677,8 +5684,8 @@ static std::vector<BYTE> FetchAppIconBytes(const std::wstring& appUserModelId, i
                     DWORD pid = 0;
                     std::wstring procPath;
                     if (AppIdMatchesProcess(*c->aumid, hWnd, &pid, &procPath)) {
-                        HICON icon = (HICON)SendMessageW(hWnd, WM_GETICON, ICON_BIG,   0);
-                        if (!icon) icon = (HICON)SendMessageW(hWnd, WM_GETICON, ICON_SMALL, 0);
+                        HICON icon = QueryWindowIconWithTimeout(hWnd, ICON_BIG);
+                        if (!icon) icon = QueryWindowIconWithTimeout(hWnd, ICON_SMALL);
                         if (!icon) icon = (HICON)GetClassLongPtrW(hWnd, GCLP_HICON);
                         if (!icon) icon = (HICON)GetClassLongPtrW(hWnd, GCLP_HICONSM);
                         if (icon) {
@@ -4776,9 +5783,19 @@ static std::vector<BYTE> FetchAppIconBytes(const std::wstring& appUserModelId, i
 
     return result;
 }
+static bool IsCurrentMediaSession(
+    const GlobalSystemMediaTransportControlsSession& session,
+    uint64_t generation) {
+    if (!session || g_sessionGeneration.load() != generation) return false;
+    std::lock_guard<std::mutex> lock(g_sessionMtx);
+    return g_sessionGeneration.load() == generation &&
+           g_currentSession == session;
+}
+
 static void UpdateMediaTimeline(
-    const GlobalSystemMediaTransportControlsSession& session) {
-    if (!session) return;
+    const GlobalSystemMediaTransportControlsSession& session,
+    uint64_t generation) {
+    if (!IsCurrentMediaSession(session, generation)) return;
     try {
         auto timeline = session.GetTimelineProperties();
         constexpr int64_t kTicksPerSecond = 10'000'000;
@@ -4791,7 +5808,9 @@ static void UpdateMediaTimeline(
             (positionTicks - startTicks) / kTicksPerSecond,
             0, durationSeconds);
 
+        if (!IsCurrentMediaSession(session, generation)) return;
         std::lock_guard<std::mutex> lock(g_mediaMtx);
+        if (g_sessionGeneration.load() != generation) return;
         g_media.positionSeconds = positionSeconds;
         g_media.durationSeconds = durationSeconds;
         g_media.timelineSampleTick = GetTickCount64();
@@ -4801,212 +5820,344 @@ static void UpdateMediaTimeline(
 }
 
 static void FetchMediaPropertiesAsync() {
-    Wh_Log(L"FetchMediaPropertiesAsync: Called");
-    std::thread([]() {
-        if (g_unloading) return;
-        winrt::init_apartment(winrt::apartment_type::multi_threaded);
-        try {
-            GlobalSystemMediaTransportControlsSession session{nullptr};
-            std::wstring aumid;
-            {
-                std::lock_guard<std::mutex> lk(g_sessionMtx);
-                session = g_currentSession;
-                if (session) {
-                    try {
-                        aumid = std::wstring(session.SourceAppUserModelId());
-                    } catch (...) {
-                        winrt::uninit_apartment();
-                        return;
-                    }
+    bool expected = false;
+    if (!g_mediaPropertiesFetchActive.compare_exchange_strong(expected, true)) {
+        g_mediaPropertiesFetchPending = true;
+        return;
+    }
+
+    bool queued = QueueAsyncTask([]() {
+        struct ActiveGuard {
+            ~ActiveGuard() {
+                g_mediaPropertiesFetchActive = false;
+                if (!g_unloading &&
+                    g_mediaPropertiesFetchPending.exchange(false)) {
+                    FetchMediaPropertiesAsync();
                 }
             }
-            if (!session) {
-                winrt::uninit_apartment();
+        } activeGuard;
+        if (g_unloading) return;
+
+        struct ApartmentGuard {
+            bool initialized = false;
+            ~ApartmentGuard() {
+                if (initialized) winrt::uninit_apartment();
+            }
+        } apartment;
+        try {
+            winrt::init_apartment(winrt::apartment_type::multi_threaded);
+            apartment.initialized = true;
+
+            GlobalSystemMediaTransportControlsSession session{nullptr};
+            std::wstring aumid;
+            uint64_t generation = 0;
+            {
+                std::lock_guard<std::mutex> lock(g_sessionMtx);
+                session = g_currentSession;
+                generation = g_sessionGeneration.load();
+                if (session) {
+                    aumid = std::wstring(session.SourceAppUserModelId());
+                }
+            }
+            if (!session || g_unloading) {
                 return;
             }
 
-            try {
-                auto props = session.TryGetMediaPropertiesAsync().get();
-                if (!props) {
-                    winrt::uninit_apartment();
-                    return;
-                }
+            auto propsResult = WaitForWinrtOperation(
+                session.TryGetMediaPropertiesAsync(), 5000,
+                L"Media-properties request");
+            if (!propsResult) {
+                return;
+            }
+            auto props = *propsResult;
+            if (!props || !IsCurrentMediaSession(session, generation)) {
+                return;
+            }
 
-                std::vector<BYTE> thumbBytes;
-                uint64_t          thumbHash = 0;
+            std::wstring title(props.Title());
+            std::wstring artist(props.Artist());
+            std::wstring albumTitle(props.AlbumTitle());
+            std::vector<BYTE> thumbBytes;
+            uint64_t thumbHash = 0;
 
-                if (auto thumbRef = props.Thumbnail()) {
-                    try {
-                        auto stream = thumbRef.OpenReadAsync().get();
-                        if (stream) {
-                            UINT64 sz = stream.Size();
-                            if (sz > 0 && sz < 4 * 1024 * 1024) {
-                                DataReader reader(stream);
-                                reader.LoadAsync((UINT32)sz).get();
-                                thumbBytes.resize((size_t)sz);
-                                reader.ReadBytes(winrt::array_view<BYTE>(thumbBytes));
+            if (auto thumbRef = props.Thumbnail()) {
+                try {
+                    auto streamResult = WaitForWinrtOperation(
+                        thumbRef.OpenReadAsync(), 3000,
+                        L"Album-art stream");
+                    if (!streamResult) {
+                        throw winrt::hresult_error(
+                            HRESULT_FROM_WIN32(ERROR_TIMEOUT));
+                    }
+                    auto stream = *streamResult;
+                    if (stream) {
+                        UINT64 size = stream.Size();
+                        if (size > 0 && size < 4 * 1024 * 1024) {
+                            DataReader reader(stream);
+                            auto loaded = WaitForWinrtOperation(
+                                reader.LoadAsync(static_cast<UINT32>(size)),
+                                3000, L"Album-art read");
+                            if (!loaded ||
+                                *loaded < static_cast<UINT32>(size)) {
                                 reader.DetachStream();
-                                for (size_t i = 0; i < thumbBytes.size(); i += 1024)
-                                    thumbHash = thumbHash * 31 + thumbBytes[i];
+                                throw winrt::hresult_error(
+                                    HRESULT_FROM_WIN32(ERROR_TIMEOUT));
+                            }
+                            thumbBytes.resize(static_cast<size_t>(size));
+                            reader.ReadBytes(winrt::array_view<BYTE>(thumbBytes));
+                            reader.DetachStream();
+                            for (size_t i = 0; i < thumbBytes.size(); i += 1024) {
+                                thumbHash = thumbHash * 31 + thumbBytes[i];
                             }
                         }
-                    } catch (...) { thumbBytes.clear(); }
-                }
-
-                std::vector<BYTE> appIconBytes;
-                std::wstring      appIconKey;
-                bool forceIconRefresh = false;
-                {
-                    std::lock_guard<std::mutex> lk(g_mediaMtx);
-                    appIconKey = g_media.appIconKey;
-                    appIconBytes = g_media.appIconBytes;
-                }
-                {
-                    std::lock_guard<std::mutex> lk(g_sessionMtx);
-                    forceIconRefresh = g_userSwitchedSession;
-                }
-                if (g_settings.showAppIcon && (aumid != appIconKey || appIconBytes.empty() || forceIconRefresh || g_cachedAppIconSize != g_settings.appIconSize)) {
-                    try {
-                        appIconBytes = FetchAppIconBytes(aumid, g_settings.appIconSize);
-                        appIconKey   = aumid;
-                        g_cachedAppIconSize = g_settings.appIconSize;
-                    } catch (...) {
-
                     }
+                } catch (...) {
+                    thumbBytes.clear();
+                    thumbHash = 0;
                 }
-
-                {
-                    std::lock_guard<std::mutex> lk(g_mediaMtx);
-                    try {
-                        g_media.title          = std::wstring(props.Title());
-                        g_media.artist         = std::wstring(props.Artist());
-                        g_media.albumTitle     = std::wstring(props.AlbumTitle());
-                        g_media.hasMedia       = !g_media.title.empty() || !g_media.artist.empty();
-                        g_media.thumbnailBytes = std::move(thumbBytes);
-                        g_media.thumbnailHash  = thumbHash;
-                        g_media.appUserModelId = aumid;
-                        if (g_settings.showAppIcon) {
-                            g_media.appIconBytes   = std::move(appIconBytes);
-                            g_media.appIconKey     = appIconKey;
-                        }
-                        Wh_Log(L"FetchMediaPropertiesAsync: Set hasMedia=%d (title='%s', artist='%s')",
-                               g_media.hasMedia, g_media.title.c_str(), g_media.artist.c_str());
-                    } catch (...) {
-
-                    }
-                }
-
-                if (forceIconRefresh && !appIconBytes.empty()) {
-                    std::lock_guard<std::mutex> lk(g_sessionMtx);
-                    g_userSwitchedSession = false;
-                    Wh_Log(L"FetchMediaPropertiesAsync: Icon refreshed after session switch");
-                }
-                UpdateMediaTimeline(session);
-            } catch (...) {
-
             }
-        } catch (...) {}
-        Wh_Log(L"FetchMediaPropertiesAsync: About to call DispatchMediaUpdate");
-        DispatchMediaUpdate();
-        winrt::uninit_apartment();
-    }).detach();
+
+            if (!IsCurrentMediaSession(session, generation) || g_unloading) {
+                return;
+            }
+
+            std::vector<BYTE> appIconBytes;
+            std::wstring appIconKey;
+            bool forceIconRefresh = false;
+            {
+                std::lock_guard<std::mutex> lock(g_mediaMtx);
+                appIconKey = g_media.appIconKey;
+                appIconBytes = g_media.appIconBytes;
+            }
+            {
+                std::lock_guard<std::mutex> lock(g_sessionMtx);
+                forceIconRefresh = g_userSwitchedSession;
+            }
+            if (g_settings.showAppIcon &&
+                (aumid != appIconKey || appIconBytes.empty() ||
+                 forceIconRefresh ||
+                 g_cachedAppIconSize != g_settings.appIconSize)) {
+                appIconBytes = FetchAppIconBytes(aumid, g_settings.appIconSize);
+                appIconKey = aumid;
+                g_cachedAppIconSize = g_settings.appIconSize;
+            }
+
+            if (!IsCurrentMediaSession(session, generation) || g_unloading) {
+                return;
+            }
+
+            bool hasMedia = !title.empty() || !artist.empty();
+            {
+                std::lock_guard<std::mutex> lock(g_mediaMtx);
+                if (g_sessionGeneration.load() != generation) {
+                    return;
+                }
+                g_media.title = std::move(title);
+                g_media.artist = std::move(artist);
+                g_media.albumTitle = std::move(albumTitle);
+                g_media.hasMedia = hasMedia;
+                g_media.thumbnailBytes = std::move(thumbBytes);
+                g_media.thumbnailHash = thumbHash;
+                g_media.appUserModelId = aumid;
+                if (g_settings.showAppIcon) {
+                    g_media.appIconBytes = std::move(appIconBytes);
+                    g_media.appIconKey = appIconKey;
+                }
+                Wh_Log(L"Media metadata: hasMedia=%d title='%s' artist='%s'",
+                       g_media.hasMedia, g_media.title.c_str(),
+                       g_media.artist.c_str());
+            }
+
+            if (hasMedia) {
+                // Keep a short confirmation window. Some players signal the
+                // track change before their new properties are observable, so
+                // the first successful read can still be the previous song.
+                ULONGLONG confirmationDeadline = GetTickCount64() + 1500;
+                ULONGLONG currentDeadline =
+                    g_metadataRetryUntilTick.load();
+                if (currentDeadline == 0 ||
+                    currentDeadline > confirmationDeadline) {
+                    g_metadataRetryUntilTick = confirmationDeadline;
+                }
+            }
+            if (forceIconRefresh) {
+                std::lock_guard<std::mutex> lock(g_sessionMtx);
+                if (g_sessionGeneration.load() == generation &&
+                    g_currentSession == session) {
+                    g_userSwitchedSession = false;
+                }
+            }
+            UpdateMediaTimeline(session, generation);
+            DispatchMediaUpdate();
+        } catch (...) {
+            Wh_Log(L"Media metadata refresh failed");
+        }
+    });
+
+    if (!queued) g_mediaPropertiesFetchActive = false;
 }
 
 static void FetchPlaybackInfoAsync() {
-    Wh_Log(L"FetchPlaybackInfoAsync: Called");
-    std::thread([]() {
-        if (g_unloading) return;
-        winrt::init_apartment(winrt::apartment_type::multi_threaded);
-        try {
-            GlobalSystemMediaTransportControlsSession session{nullptr};
-            { std::lock_guard<std::mutex> lk(g_sessionMtx); session = g_currentSession; }
-            if (session) {
-                try {
-                    auto info = session.GetPlaybackInfo();
-                    if (!info) {
-                        winrt::uninit_apartment();
-                        return;
-                    }
+    bool expected = false;
+    if (!g_playbackInfoFetchActive.compare_exchange_strong(expected, true)) {
+        g_playbackInfoFetchPending = true;
+        return;
+    }
 
-                    auto status = info.PlaybackStatus();
-                    bool playing = (status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing);
-                    bool wasPlaying = false;
-                    {
-                        std::lock_guard<std::mutex> lk(g_mediaMtx);
-                        wasPlaying = g_media.isPlaying;
-                        g_media.isPlaying = playing;
-                    }
-                    UpdateMediaTimeline(session);
-
-                    if (playing != wasPlaying) {
-                        Wh_Log(L"Playback state changed: %s -> %s",
-                            wasPlaying ? L"Playing" : L"Not Playing",
-                            playing ? L"Playing" : L"Not Playing");
-                    }
-
-                    try {
-                        auto shuffleRef = info.IsShuffleActive();
-                        if (shuffleRef) {
-                            g_shuffleEnabled = shuffleRef.Value();
-                        }
-                    } catch (...) {}
-
-                    try {
-                        auto repeatRef = info.AutoRepeatMode();
-                        if (repeatRef) {
-                            using RM = winrt::Windows::Media::MediaPlaybackAutoRepeatMode;
-                            auto v = repeatRef.Value();
-                            if (v == RM::Track) g_repeatMode = RepeatMode::One;
-                            else if (v == RM::List) g_repeatMode = RepeatMode::All;
-                            else g_repeatMode = RepeatMode::Off;
-                        }
-                    } catch (...) {}
-
-                    try {
-                        auto controls = info.Controls();
-                        if (controls) {
-                            bool canPrev   = controls.IsPreviousEnabled();
-                            bool canNext   = controls.IsNextEnabled();
-                            bool canShuf   = controls.IsShuffleEnabled();
-                            bool canRep    = controls.IsRepeatEnabled();
-                            bool canSeek   = controls.IsPlaybackPositionEnabled();
-                            {
-                                std::lock_guard<std::mutex> lk(g_mediaMtx);
-                                g_media.canSkipPrevious = canPrev;
-                                g_media.canSkipNext     = canNext;
-                                g_media.canShuffle      = canShuf;
-                                g_media.canRepeat       = canRep;
-                                g_media.canSeek         = canSeek;
-                            }
-                        }
-                    } catch (...) {}
-                } catch (...) {
-
+    bool queued = QueueAsyncTask([]() {
+        struct ActiveGuard {
+            ~ActiveGuard() {
+                g_playbackInfoFetchActive = false;
+                if (!g_unloading &&
+                    g_playbackInfoFetchPending.exchange(false)) {
+                    FetchPlaybackInfoAsync();
                 }
             }
-        } catch (...) {}
-        Wh_Log(L"FetchPlaybackInfoAsync: About to call DispatchMediaUpdate");
-        DispatchMediaUpdate();
-        winrt::uninit_apartment();
-    }).detach();
+        } activeGuard;
+        if (g_unloading) return;
+
+        struct ApartmentGuard {
+            bool initialized = false;
+            ~ApartmentGuard() {
+                if (initialized) winrt::uninit_apartment();
+            }
+        } apartment;
+        try {
+            winrt::init_apartment(winrt::apartment_type::multi_threaded);
+            apartment.initialized = true;
+
+            GlobalSystemMediaTransportControlsSession session{nullptr};
+            uint64_t generation = 0;
+            {
+                std::lock_guard<std::mutex> lock(g_sessionMtx);
+                session = g_currentSession;
+                generation = g_sessionGeneration.load();
+            }
+            if (!session || g_unloading) {
+                return;
+            }
+
+            auto info = session.GetPlaybackInfo();
+            if (!info || !IsCurrentMediaSession(session, generation)) {
+                return;
+            }
+
+            bool playing = info.PlaybackStatus() ==
+                GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing;
+            bool wasPlaying = false;
+            bool controlsAvailable = false;
+            bool canPrevious = true;
+            bool canNext = true;
+            bool canShuffle = true;
+            bool canRepeat = true;
+            bool canSeek = true;
+
+            try {
+                if (auto controls = info.Controls()) {
+                    controlsAvailable = true;
+                    canPrevious = controls.IsPreviousEnabled();
+                    canNext = controls.IsNextEnabled();
+                    canShuffle = controls.IsShuffleEnabled();
+                    canRepeat = controls.IsRepeatEnabled();
+                    canSeek = controls.IsPlaybackPositionEnabled();
+                }
+            } catch (...) {}
+
+            if (!IsCurrentMediaSession(session, generation)) {
+                return;
+            }
+            {
+                std::lock_guard<std::mutex> lock(g_mediaMtx);
+                if (g_sessionGeneration.load() != generation) {
+                    return;
+                }
+                wasPlaying = g_media.isPlaying;
+                g_media.isPlaying = playing;
+                g_media.playbackStateKnown = true;
+                if (controlsAvailable) {
+                    g_media.canSkipPrevious = canPrevious;
+                    g_media.canSkipNext = canNext;
+                    g_media.canShuffle = canShuffle;
+                    g_media.canRepeat = canRepeat;
+                    g_media.canSeek = canSeek;
+                }
+            }
+
+            try {
+                auto shuffle = info.IsShuffleActive();
+                if (shuffle) g_shuffleEnabled = shuffle.Value();
+            } catch (...) {}
+            try {
+                auto repeat = info.AutoRepeatMode();
+                if (repeat) {
+                    using Mode = winrt::Windows::Media::MediaPlaybackAutoRepeatMode;
+                    auto value = repeat.Value();
+                    g_repeatMode = value == Mode::Track
+                        ? RepeatMode::One
+                        : (value == Mode::List ? RepeatMode::All
+                                              : RepeatMode::Off);
+                }
+            } catch (...) {}
+
+            UpdateMediaTimeline(session, generation);
+            if (playing != wasPlaying) {
+                Wh_Log(L"Playback state changed: %s -> %s",
+                       wasPlaying ? L"Playing" : L"Not playing",
+                       playing ? L"Playing" : L"Not playing");
+            }
+            DispatchMediaUpdate();
+        } catch (...) {
+            Wh_Log(L"Playback-state refresh failed");
+        }
+    });
+
+    if (!queued) g_playbackInfoFetchActive = false;
 }
 
 static void DetachCurrentSession() {
-    std::lock_guard<std::mutex> lk(g_sessionMtx);
-    if (!g_currentSession) return;
-    try {
-        if (g_evMediaProps.value) { g_currentSession.MediaPropertiesChanged(g_evMediaProps); g_evMediaProps = {}; }
-        if (g_evPlayback.value)   { g_currentSession.PlaybackInfoChanged(g_evPlayback); g_evPlayback = {}; }
-        if (g_evTimeline.value)   { g_currentSession.TimelinePropertiesChanged(g_evTimeline); g_evTimeline = {}; }
-    } catch (...) {}
-    g_currentSession = nullptr;
+    // These modes are optional session-local state. Never display the last
+    // player's values while no session is attached or a replacement session
+    // is still being queried.
+    g_shuffleEnabled = false;
+    g_repeatMode = RepeatMode::Off;
+
+    GlobalSystemMediaTransportControlsSession session{nullptr};
+    winrt::event_token mediaPropertiesToken{};
+    winrt::event_token playbackToken{};
+    winrt::event_token timelineToken{};
     {
-        std::lock_guard<std::mutex> lkm(g_mediaMtx);
+        std::lock_guard<std::mutex> lock(g_sessionMtx);
+        if (!g_currentSession) return;
+        session = g_currentSession;
+        mediaPropertiesToken = g_evMediaProps;
+        playbackToken = g_evPlayback;
+        timelineToken = g_evTimeline;
+        g_evMediaProps = {};
+        g_evPlayback = {};
+        g_evTimeline = {};
+        g_currentSession = nullptr;
+        g_sessionGeneration.fetch_add(1);
+    }
+
+    if (mediaPropertiesToken.value) {
+        try { session.MediaPropertiesChanged(mediaPropertiesToken); } catch (...) {}
+    }
+    if (playbackToken.value) {
+        try { session.PlaybackInfoChanged(playbackToken); } catch (...) {}
+    }
+    if (timelineToken.value) {
+        try { session.TimelinePropertiesChanged(timelineToken); } catch (...) {}
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(g_mediaMtx);
         g_media.canSkipPrevious = true;
         g_media.canSkipNext     = true;
         g_media.canShuffle      = true;
         g_media.canRepeat       = true;
         g_media.canSeek         = true;
+        g_media.isPlaying       = false;
+        g_media.playbackStateKnown = false;
         g_media.positionSeconds = 0;
         g_media.durationSeconds = 0;
         g_media.timelineSampleTick = 0;
@@ -5014,12 +6165,19 @@ static void DetachCurrentSession() {
 }
 
 static GlobalSystemMediaTransportControlsSession PickBestSession() {
-    if (!g_sessionMgr) return nullptr;
+    GlobalSystemMediaTransportControlsSessionManager manager{nullptr};
+    {
+        std::lock_guard<std::mutex> lock(g_sessionMtx);
+        manager = g_sessionMgr;
+    }
+    if (!manager) return nullptr;
+
     try {
-        auto sessions = g_sessionMgr.GetSessions();
+        auto sessions = manager.GetSessions();
         int sessionCount = sessions.Size();
         Wh_Log(L"PickBestSession: Found %d media sessions", sessionCount);
 
+        std::wstring preferredApp = ToLowerCopy(GetPreferredMediaApp());
         GlobalSystemMediaTransportControlsSession best{nullptr};
         int index = 0;
         for (auto const& s : sessions) {
@@ -5027,6 +6185,12 @@ static GlobalSystemMediaTransportControlsSession PickBestSession() {
                 std::wstring appId = s.SourceAppUserModelId().c_str();
                 if (IsIgnoredMediaApp(appId)) {
                     Wh_Log(L"PickBestSession: Session %d (%s) is ignored", index, appId.c_str());
+                    index++;
+                    continue;
+                }
+
+                if (!preferredApp.empty() &&
+                    ToLowerCopy(appId) != preferredApp) {
                     index++;
                     continue;
                 }
@@ -5064,6 +6228,9 @@ static GlobalSystemMediaTransportControlsSession PickBestSession() {
             } catch (...) {
                 Wh_Log(L"PickBestSession: No playing session, selected first available (app ID unavailable)");
             }
+        } else if (!preferredApp.empty()) {
+            Wh_Log(L"PickBestSession: Preferred media app is not available: %s",
+                   preferredApp.c_str());
         } else {
             Wh_Log(L"PickBestSession: No suitable session found");
         }
@@ -5088,21 +6255,19 @@ static void AttachToSession(GlobalSystemMediaTransportControlsSession session) {
         return;
     }
 
-    bool needsReattach = false;
+    bool sameSessionReady = false;
     {
-        std::lock_guard<std::mutex> lk(g_sessionMtx);
+        std::lock_guard<std::mutex> lock(g_sessionMtx);
         if (g_currentSession == session) {
-            if (!g_evMediaProps.value || !g_evPlayback.value ||
-                !g_evTimeline.value) {
-                Wh_Log(L"AttachToSession: Same session but events not attached, reattaching");
-                needsReattach = true;
-            } else {
-                Wh_Log(L"AttachToSession: Same session already attached, fetching data");
-                goto fetch;
-            }
+            sameSessionReady = g_evMediaProps.value && g_evPlayback.value &&
+                               g_evTimeline.value;
         }
     }
-    (void)needsReattach;
+    if (sameSessionReady) {
+        FetchMediaPropertiesAsync();
+        FetchPlaybackInfoAsync();
+        return;
+    }
 
     try {
         std::wstring appId = session.SourceAppUserModelId().c_str();
@@ -5112,6 +6277,8 @@ static void AttachToSession(GlobalSystemMediaTransportControlsSession session) {
     }
 
     DetachCurrentSession();
+    g_shuffleEnabled = false;
+    g_repeatMode = RepeatMode::Off;
 
     // Do not carry the previous player's volume glyph/value into the new
     // session while its own audio session is being discovered.
@@ -5120,57 +6287,132 @@ static void AttachToSession(GlobalSystemMediaTransportControlsSession session) {
 
     {
         std::lock_guard<std::mutex> lk(g_mediaMtx);
-        g_media.appIconKey   = L"";
+        g_media.title.clear();
+        g_media.artist.clear();
+        g_media.albumTitle.clear();
+        g_media.isPlaying = false;
+        g_media.playbackStateKnown = false;
+        g_media.hasMedia = false;
+        g_media.thumbnailBytes.clear();
+        g_media.thumbnailHash = 0;
+        g_media.appUserModelId.clear();
+        g_media.appIconKey = L"";
         g_media.appIconBytes.clear();
     }
     g_cachedAppIconSize = -1;
+    g_scrollResetRequested = true;
 
-    ResetScrollState(g_titleScroll);
-    ResetScrollState(g_artistScroll);
-
+    uint64_t generation = 0;
     {
-        std::lock_guard<std::mutex> lk(g_sessionMtx);
+        std::lock_guard<std::mutex> lock(g_sessionMtx);
         g_currentSession = session;
-        try {
-            g_evMediaProps = g_currentSession.MediaPropertiesChanged([](auto const&, auto const&) {
-                Wh_Log(L"MediaPropertiesChanged event fired");
-                if (!g_unloading) FetchMediaPropertiesAsync();
-            });
-            g_evPlayback = g_currentSession.PlaybackInfoChanged([](auto const&, auto const&) {
-                Wh_Log(L"PlaybackInfoChanged event fired");
-                if (!g_unloading) FetchPlaybackInfoAsync();
-            });
-            g_evTimeline = g_currentSession.TimelinePropertiesChanged([](auto const&, auto const&) {
-                Wh_Log(L"TimelinePropertiesChanged event fired");
-                if (!g_unloading) FetchPlaybackInfoAsync();
-            });
-            Wh_Log(L"AttachToSession: Event handlers attached successfully");
-        } catch (...) {
-            Wh_Log(L"AttachToSession: Failed to attach event handlers");
-            g_currentSession = nullptr;
-            return;
+        g_sessionGeneration.fetch_add(1);
+        generation = g_sessionGeneration.load();
+        ArmMetadataRetry();
+    }
+
+    // Prime playback state synchronously on the serialized media thread. The
+    // metadata and playback workers can otherwise finish out of order and
+    // briefly present an already-playing song as paused after sign-in/restart.
+    try {
+        auto initialPlayback = session.GetPlaybackInfo();
+        if (initialPlayback &&
+            IsCurrentMediaSession(session, generation)) {
+            bool initialPlaying =
+                initialPlayback.PlaybackStatus() ==
+                GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing;
+            std::lock_guard<std::mutex> lock(g_mediaMtx);
+            if (g_sessionGeneration.load() == generation) {
+                g_media.isPlaying = initialPlaying;
+                g_media.playbackStateKnown = true;
+            }
+        }
+    } catch (...) {
+        Wh_Log(L"AttachToSession: initial playback snapshot unavailable");
+    }
+
+    winrt::event_token mediaPropertiesToken{};
+    winrt::event_token playbackToken{};
+    winrt::event_token timelineToken{};
+    try {
+        mediaPropertiesToken = session.MediaPropertiesChanged([](auto const&, auto const&) {
+            MediaEventCallbackGuard callbackGuard;
+            Wh_Log(L"MediaPropertiesChanged event fired");
+            if (!g_unloading) {
+                ArmMetadataRetry(8000);
+                FetchMediaPropertiesAsync();
+            }
+        });
+        playbackToken = session.PlaybackInfoChanged([](auto const&, auto const&) {
+            MediaEventCallbackGuard callbackGuard;
+            Wh_Log(L"PlaybackInfoChanged event fired");
+            if (!g_unloading) FetchPlaybackInfoAsync();
+        });
+        timelineToken = session.TimelinePropertiesChanged([](auto const&, auto const&) {
+            MediaEventCallbackGuard callbackGuard;
+            if (!g_unloading) FetchPlaybackInfoAsync();
+        });
+    } catch (...) {
+        if (mediaPropertiesToken.value) {
+            try { session.MediaPropertiesChanged(mediaPropertiesToken); } catch (...) {}
+        }
+        if (playbackToken.value) {
+            try { session.PlaybackInfoChanged(playbackToken); } catch (...) {}
+        }
+        if (timelineToken.value) {
+            try { session.TimelinePropertiesChanged(timelineToken); } catch (...) {}
+        }
+        {
+            std::lock_guard<std::mutex> lock(g_sessionMtx);
+            if (g_currentSession == session &&
+                g_sessionGeneration.load() == generation) {
+                g_currentSession = nullptr;
+                g_sessionGeneration.fetch_add(1);
+            }
+        }
+        Wh_Log(L"AttachToSession: Failed to attach event handlers");
+        DispatchMediaUpdate();
+        return;
+    }
+
+    bool committed = false;
+    {
+        std::lock_guard<std::mutex> lock(g_sessionMtx);
+        if (g_currentSession == session &&
+            g_sessionGeneration.load() == generation) {
+            g_evMediaProps = mediaPropertiesToken;
+            g_evPlayback = playbackToken;
+            g_evTimeline = timelineToken;
+            committed = true;
         }
     }
-fetch:
+    if (!committed) {
+        try { session.MediaPropertiesChanged(mediaPropertiesToken); } catch (...) {}
+        try { session.PlaybackInfoChanged(playbackToken); } catch (...) {}
+        try { session.TimelinePropertiesChanged(timelineToken); } catch (...) {}
+        return;
+    }
+
+    Wh_Log(L"AttachToSession: Event handlers attached successfully");
     FetchMediaPropertiesAsync();
     FetchPlaybackInfoAsync();
 }
 
 static void OnSessionsChanged() {
     if (g_unloading) return;
+    GlobalSystemMediaTransportControlsSessionManager manager{nullptr};
+    {
+        std::lock_guard<std::mutex> lock(g_sessionMtx);
+        manager = g_sessionMgr;
+    }
+    if (!manager) return;
+
     bool userSwitched = false;
     bool forceRefresh = g_forceSessionRefresh.exchange(false);
     {
         std::lock_guard<std::mutex> lk(g_sessionMtx);
         userSwitched = g_userSwitchedSession;
     }
-
-    try {
-        if (g_sessionMgr) {
-            auto sessions = g_sessionMgr.GetSessions();
-            g_sessionCount.store((int)sessions.Size());
-        }
-    } catch (...) {}
 
     Wh_Log(L"OnSessionsChanged: userSwitched=%d, forceRefresh=%d", userSwitched, forceRefresh);
 
@@ -5206,7 +6448,7 @@ static void OnSessionsChanged() {
             }
 
             if (currentSession) {
-                auto sessions = g_sessionMgr.GetSessions();
+                auto sessions = manager.GetSessions();
                 for (auto const& s : sessions) {
                     if (s == currentSession) {
                         currentSessionExists = true;
@@ -5234,65 +6476,168 @@ static void OnSessionsChanged() {
 
 static DWORD WINAPI MediaThreadProc(void*) {
     Wh_Log(L"MediaThreadProc: Starting media thread");
+    HANDLE stopEvent = SnapshotWorkerEventHandle(g_mediaStopEvent);
+    HANDLE refreshEvent = SnapshotWorkerEventHandle(g_mediaRefreshEvent);
+    if (!stopEvent || !refreshEvent) {
+        Wh_Log(L"MediaThreadProc: worker events are unavailable");
+        return 0;
+    }
+    bool apartmentInitialized = false;
     try {
         winrt::init_apartment(winrt::apartment_type::multi_threaded);
-        Wh_Log(L"MediaThreadProc: Requesting session manager");
-        auto op = GlobalSystemMediaTransportControlsSessionManager::RequestAsync();
-        while (op.Status() == winrt::Windows::Foundation::AsyncStatus::Started) {
-            if (WaitForSingleObject(g_mediaStopEvent, 50) == WAIT_OBJECT_0) goto done;
-        }
-        g_sessionMgr = op.GetResults();
-        Wh_Log(L"MediaThreadProc: Session manager obtained");
-
-        g_evSessionsChanged = g_sessionMgr.SessionsChanged([](auto const&, auto const&) {
-            Wh_Log(L"MediaThreadProc: SessionsChanged event fired");
-            OnSessionsChanged();
-        });
-        g_evCurrentChanged  = g_sessionMgr.CurrentSessionChanged([](auto const&, auto const&) {
-            Wh_Log(L"MediaThreadProc: CurrentSessionChanged event fired");
-            OnSessionsChanged();
-        });
-
-        Wh_Log(L"MediaThreadProc: Initial session check");
-        OnSessionsChanged();
-
-        Wh_Log(L"MediaThreadProc: Waiting 2 seconds before retry check");
-        if (WaitForSingleObject(g_mediaStopEvent, 2000) == WAIT_TIMEOUT) {
-            if (!g_unloading) {
-                Wh_Log(L"MediaThreadProc: Performing retry session check");
-                g_forceSessionRefresh = true;
-                OnSessionsChanged();
-            }
-        }
-
-        Wh_Log(L"MediaThreadProc: Entering wait loop");
-        WaitForSingleObject(g_mediaStopEvent, INFINITE);
-
-        Wh_Log(L"MediaThreadProc: Shutting down");
-        try { if (g_evSessionsChanged.value) g_sessionMgr.SessionsChanged(g_evSessionsChanged); } catch (...) { Wh_Log(L"MediaThreadProc: Failed to unregister SessionsChanged event"); }
-        try { if (g_evCurrentChanged.value)  g_sessionMgr.CurrentSessionChanged(g_evCurrentChanged); } catch (...) { Wh_Log(L"MediaThreadProc: Failed to unregister CurrentSessionChanged event"); }
-        DetachCurrentSession();
-        g_sessionMgr = nullptr;
-    done:
-        winrt::uninit_apartment();
-        Wh_Log(L"MediaThreadProc: Media thread ended");
+        apartmentInitialized = true;
     } catch (...) {
-        Wh_Log(L"MediaThreadProc: Exception in media thread");
+        Wh_Log(L"MediaThreadProc: failed to initialize COM apartment");
+        return 0;
     }
+
+    DWORD retryDelayMs = 250;
+    while (!g_unloading &&
+           WaitForSingleObject(stopEvent, 0) != WAIT_OBJECT_0) {
+        GlobalSystemMediaTransportControlsSessionManager manager{nullptr};
+        g_evSessionsChanged = {};
+        g_evCurrentChanged = {};
+        bool managerReady = false;
+
+        try {
+            Wh_Log(L"MediaThreadProc: Requesting session manager");
+            auto operation =
+                GlobalSystemMediaTransportControlsSessionManager::RequestAsync();
+            if (WaitForSingleObject(stopEvent, 0) ==
+                WAIT_OBJECT_0) {
+                try { operation.Cancel(); } catch (...) {}
+                break;
+            }
+            auto managerResult = WaitForWinrtOperation(
+                operation, 5000, L"Windows media-session manager");
+            if (!managerResult) {
+                throw winrt::hresult_error(
+                    HRESULT_FROM_WIN32(ERROR_TIMEOUT));
+            }
+            manager = *managerResult;
+            if (!manager) throw winrt::hresult_error(E_FAIL);
+            {
+                std::lock_guard<std::mutex> lock(g_sessionMtx);
+                g_sessionMgr = manager;
+            }
+            managerReady = true;
+            Wh_Log(L"MediaThreadProc: Session manager obtained");
+
+            g_evSessionsChanged =
+                manager.SessionsChanged([](auto const&, auto const&) {
+                    MediaEventCallbackGuard callbackGuard;
+                    RequestMediaSessionRefresh();
+                });
+            g_evCurrentChanged =
+                manager.CurrentSessionChanged([](auto const&, auto const&) {
+                    MediaEventCallbackGuard callbackGuard;
+                    RequestMediaSessionRefresh();
+                });
+
+            // The first refresh runs immediately on this serialized media
+            // thread, avoiding an extra startup round trip.
+            OnSessionsChanged();
+            retryDelayMs = 250;
+
+            while (!g_unloading) {
+                HANDLE handles[] = {
+                    stopEvent, refreshEvent};
+                DWORD waitResult = WaitForMultipleObjects(
+                    ARRAYSIZE(handles), handles, FALSE, 30000);
+                if (waitResult == WAIT_OBJECT_0) break;
+                if (waitResult == WAIT_OBJECT_0 + 1) {
+                    OnSessionsChanged();
+                } else if (waitResult == WAIT_TIMEOUT) {
+                    // Events drive all normal session and metadata updates.
+                    // A low-frequency, metadata-free broker call only verifies
+                    // that the WinRT broker is still alive; failure falls into
+                    // the reconnect path below.
+                    auto sessions = manager.GetSessions();
+                    (void)sessions.Size();
+                }
+                if (waitResult == WAIT_FAILED) {
+                    throw winrt::hresult_error(
+                        HRESULT_FROM_WIN32(GetLastError()));
+                }
+            }
+        } catch (const winrt::hresult_error& error) {
+            Wh_Log(L"MediaThreadProc: broker/session failure 0x%08X",
+                   static_cast<uint32_t>(error.code()));
+        } catch (...) {
+            Wh_Log(L"MediaThreadProc: transient session-manager failure");
+        }
+
+        if (managerReady && manager) {
+            try {
+                if (g_evSessionsChanged.value) {
+                    manager.SessionsChanged(g_evSessionsChanged);
+                }
+            } catch (...) {}
+            try {
+                if (g_evCurrentChanged.value) {
+                    manager.CurrentSessionChanged(g_evCurrentChanged);
+                }
+            } catch (...) {}
+        }
+        g_evSessionsChanged = {};
+        g_evCurrentChanged = {};
+        DetachCurrentSession();
+        {
+            std::lock_guard<std::mutex> lock(g_mediaMtx);
+            g_media = MediaState{};
+        }
+        g_scrollResetRequested = true;
+        DispatchMediaUpdate();
+        {
+            std::lock_guard<std::mutex> lock(g_sessionMtx);
+            g_sessionMgr = nullptr;
+        }
+
+        if (g_unloading ||
+            WaitForSingleObject(stopEvent, 0) == WAIT_OBJECT_0) {
+            break;
+        }
+        Wh_Log(L"MediaThreadProc: retrying broker in %u ms",
+               retryDelayMs);
+        if (WaitForSingleObject(stopEvent, retryDelayMs) ==
+            WAIT_OBJECT_0) {
+            break;
+        }
+        retryDelayMs = std::min<DWORD>(retryDelayMs * 2, 5000);
+    }
+
+    if (apartmentInitialized) winrt::uninit_apartment();
+    Wh_Log(L"MediaThreadProc: Media thread ended");
     return 0;
 }
 
 static void StartMediaThread() {
     if (g_mediaThread) return;
-    g_mediaStopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    if (!g_mediaStopEvent) return;
+    bool stopEventCreated =
+        CreateWorkerEventHandle(g_mediaStopEvent, true, false);
+    bool refreshEventCreated =
+        CreateWorkerEventHandle(g_mediaRefreshEvent, false, false);
+    if (!stopEventCreated || !refreshEventCreated) {
+        CloseWorkerEventHandle(g_mediaStopEvent);
+        CloseWorkerEventHandle(g_mediaRefreshEvent);
+        return;
+    }
     g_mediaThread = CreateThread(nullptr, 0, MediaThreadProc, nullptr, 0, nullptr);
-    if (!g_mediaThread) { CloseHandle(g_mediaStopEvent); g_mediaStopEvent = nullptr; }
+    if (!g_mediaThread) {
+        CloseWorkerEventHandle(g_mediaStopEvent);
+        CloseWorkerEventHandle(g_mediaRefreshEvent);
+    }
 }
 static void StopMediaThread() {
-    if (g_mediaStopEvent) SetEvent(g_mediaStopEvent);
-    if (g_mediaThread) { WaitForSingleObject(g_mediaThread, 5000); CloseHandle(g_mediaThread); g_mediaThread = nullptr; }
-    if (g_mediaStopEvent) { CloseHandle(g_mediaStopEvent); g_mediaStopEvent = nullptr; }
+    SignalWorkerEventHandle(g_mediaStopEvent);
+    if (g_mediaThread) {
+        WaitForThreadExit(g_mediaThread);
+        CloseHandle(g_mediaThread);
+        g_mediaThread = nullptr;
+    }
+    WaitForMediaEventCallbacksIdle();
+    CloseWorkerEventHandle(g_mediaStopEvent);
+    CloseWorkerEventHandle(g_mediaRefreshEvent);
 }
 
 static HANDLE g_timerThread    = nullptr;
@@ -5393,13 +6738,12 @@ static void StopScrollTimer() {
         try {
             if (g_scrollDispatcherTimer) {
                 g_scrollDispatcherTimer.Stop();
-                if (g_unloading) {
-                    if (g_scrollDispatcherTimerHasToken) {
-                        g_scrollDispatcherTimer.Tick(g_scrollDispatcherTimerToken);
-                        g_scrollDispatcherTimerHasToken = false;
-                    }
-                    g_scrollDispatcherTimer = nullptr;
+                if (g_scrollDispatcherTimerHasToken) {
+                    g_scrollDispatcherTimer.Tick(
+                        g_scrollDispatcherTimerToken);
+                    g_scrollDispatcherTimerHasToken = false;
                 }
+                g_scrollDispatcherTimer = nullptr;
             }
         } catch (...) {}
     };
@@ -5427,12 +6771,12 @@ static constexpr wchar_t kTitleCloneName[]       = L"FluentMedia_TitleClone";
 static constexpr wchar_t kArtistCloneName[]      = L"FluentMedia_ArtistClone";
 static constexpr wchar_t kPanelGridName[]        = L"FluentMedia_PanelGrid";
 
-static double GetAvailableScrollTextAreaWidth() {
+static double GetAvailableScrollTextAreaWidth(Grid const& playerGrid) {
     try {
         if (g_settings.playerMaxWidth <= 0) return 0.0;
 
-        if (!g_playerGrid) return 0.0;
-        auto panelFe = FindChildByName(g_playerGrid, kPanelGridName);
+        if (!playerGrid) return 0.0;
+        auto panelFe = FindChildByName(playerGrid, kPanelGridName);
         if (!panelFe) return 0.0;
         auto panelGrid = panelFe.try_as<Grid>();
         if (!panelGrid) return 0.0;
@@ -5459,13 +6803,19 @@ static double GetAvailableScrollTextAreaWidth() {
 }
 
 
-static void UpdateScrollTransforms() {
-    if (!g_playerGrid || (!g_settings.enableTitleScrolling && !g_settings.enableArtistScrolling)) return;
+static void UpdateScrollTransformsForGrid(
+    Grid const& playerGrid,
+    std::shared_ptr<PlayerVisualState> const& visualState) {
+    if (!playerGrid || !visualState ||
+        (!g_settings.enableTitleScrolling &&
+         !g_settings.enableArtistScrolling)) {
+        return;
+    }
     bool isMarquee = (g_settings.scrollMode == L"marquee");
 
     if (g_settings.enableTitleScrolling) {
         try {
-            if (auto fe = FindChildByName(g_playerGrid, kTitleScrollViewName)) {
+            if (auto fe = FindChildByName(playerGrid, kTitleScrollViewName)) {
                 if (auto cv = fe.try_as<Canvas>()) {
                     int n = VisualTreeHelper::GetChildrenCount(cv);
                     for (int i = 0; i < n; i++) {
@@ -5474,8 +6824,8 @@ static void UpdateScrollTransforms() {
                             auto name = tb.Name();
                             if (name == kTitleBlockName) {
                                 Canvas::SetLeft(tb, isMarquee
-                                    ? g_titleScroll.offset
-                                    : -g_titleScroll.offset);
+                                    ? visualState->titleScroll.offset
+                                    : -visualState->titleScroll.offset);
                             } else if (name == kTitleCloneName) {
                                 tb.Visibility(Visibility::Collapsed);
                             }
@@ -5488,7 +6838,7 @@ static void UpdateScrollTransforms() {
 
     if (g_settings.enableArtistScrolling) {
         try {
-            if (auto fe = FindChildByName(g_playerGrid, kArtistScrollViewName)) {
+            if (auto fe = FindChildByName(playerGrid, kArtistScrollViewName)) {
                 if (auto cv = fe.try_as<Canvas>()) {
                     int n = VisualTreeHelper::GetChildrenCount(cv);
                     for (int i = 0; i < n; i++) {
@@ -5497,8 +6847,8 @@ static void UpdateScrollTransforms() {
                             auto name = ab.Name();
                             if (name == kArtistBlockName) {
                                 Canvas::SetLeft(ab, isMarquee
-                                    ? g_artistScroll.offset
-                                    : -g_artistScroll.offset);
+                                    ? visualState->artistScroll.offset
+                                    : -visualState->artistScroll.offset);
                             } else if (name == kArtistCloneName) {
                                 ab.Visibility(Visibility::Collapsed);
                             }
@@ -5510,14 +6860,41 @@ static void UpdateScrollTransforms() {
     }
 }
 
+static void UpdateScrollTransforms() {
+    Grid primaryGrid = g_playerGrid;
+    if (primaryGrid) {
+        UpdateScrollTransformsForGrid(primaryGrid, g_primaryVisualState);
+    }
+
+    auto mirrors = g_mirrorPlayers;
+    for (const auto& instance : mirrors) {
+        if (!instance || !instance->playerGrid || !instance->visualState) {
+            continue;
+        }
+        struct MirrorScrollWork {
+            std::shared_ptr<MirrorPlayerInstance> instance;
+        } work{instance};
+        RunFromWindowThread(instance->taskbarWindow, [](void* parameter) {
+            auto* workItem = static_cast<MirrorScrollWork*>(parameter);
+            auto const& mirror = workItem->instance;
+            int stepPx = std::max(1, g_settings.scrollSpeed);
+            int pauseMs = g_settings.scrollPauseDuration;
+            TickScrollState(mirror->visualState->titleScroll, stepPx,
+                            pauseMs, g_settings.scrollMode);
+            TickScrollState(mirror->visualState->artistScroll, stepPx,
+                            pauseMs, g_settings.scrollMode);
+            UpdateScrollTransformsForGrid(
+                mirror->playerGrid, mirror->visualState);
+        }, &work);
+    }
+}
+
 static void DispatchMediaUpdate() {
     if (g_unloading || g_applyingSettings) return;
 
     g_needsUiUpdate = true;
     SignalDiscordPresenceUpdate();
-    if (g_timerUpdateEvent) {
-        SetEvent(g_timerUpdateEvent);
-    }
+    SignalWorkerEventHandle(g_timerUpdateEvent);
 }
 
 static void RefreshPlayerContents();
@@ -5525,6 +6902,8 @@ static void UpdateVisibility();
 static void RefreshThemeColors();
 static void RemovePlayerGrid();
 static bool InjectPlayerGrid();
+static uint64_t GetTaskbarTopologyFingerprint();
+static void QueueQuickMonitorRebuild();
 
 
 static std::atomic<bool> g_themeChangePending{false};
@@ -5532,6 +6911,15 @@ static std::atomic<bool> g_themeChangePending{false};
 static DWORD WINAPI TimerThreadProc(void*) {
     static bool lastThemeWasLight = IsSystemLightTheme();
     ULONGLONG nextVolumePollTick = 0;
+    ULONGLONG nextMetadataRetryTick = 0;
+    ULONGLONG nextInjectionRetryTick = 0;
+    ULONGLONG nextTaskbarTopologyPollTick = 0;
+    ULONGLONG taskbarTopologyRebuildDueTick = 0;
+    uint64_t lastTaskbarTopology = GetTaskbarTopologyFingerprint();
+    bool topologyOwnerWasLive = true;
+    HANDLE stopEvent = SnapshotWorkerEventHandle(g_timerStopEvent);
+    HANDLE updateEvent = SnapshotWorkerEventHandle(g_timerUpdateEvent);
+    if (!stopEvent || !updateEvent) return 0;
     HRESULT timerApartment = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
     HKEY hKey = nullptr;
@@ -5541,12 +6929,22 @@ static DWORD WINAPI TimerThreadProc(void*) {
     }
 
     while (!g_unloading) {
-        HANDLE handles[] = {g_timerStopEvent, hEvent, g_timerUpdateEvent};
-        DWORD wait = WaitForMultipleObjects(3, handles, FALSE, 500);
+        HANDLE handles[3]{};
+        DWORD handleCount = 0;
+        const DWORD stopIndex = handleCount;
+        handles[handleCount++] = stopEvent;
+        const DWORD themeIndex = hEvent ? handleCount : MAXDWORD;
+        if (hEvent) handles[handleCount++] = hEvent;
+        const DWORD updateIndex = handleCount;
+        handles[handleCount++] = updateEvent;
+        DWORD wait = WaitForMultipleObjects(
+            handleCount, handles, FALSE, 500);
 
-        if (wait == WAIT_OBJECT_0) break;
+        if (wait == WAIT_OBJECT_0 + stopIndex) break;
         if (g_applyingSettings) continue;
 
+        bool taskbarOwnerWasLive =
+            g_taskbarWnd && IsWindow(g_taskbarWnd);
         HWND hWnd = g_taskbarWnd;
         if (!hWnd || !IsWindow(hWnd)) {
             hWnd = FindCurrentProcessTaskbarWnd();
@@ -5554,7 +6952,8 @@ static DWORD WINAPI TimerThreadProc(void*) {
             if (!hWnd) continue;
         }
 
-        if (wait == WAIT_OBJECT_0 + 1) {
+        if (themeIndex != MAXDWORD &&
+            wait == WAIT_OBJECT_0 + themeIndex) {
             if (hKey) {
                 RegNotifyChangeKeyValue(hKey, FALSE, REG_NOTIFY_CHANGE_LAST_SET, hEvent, TRUE);
             }
@@ -5563,7 +6962,7 @@ static DWORD WINAPI TimerThreadProc(void*) {
                 lastThemeWasLight = currentThemeIsLight;
                 g_themeChangePending = true;
                 g_needsUiUpdate = true;
-                if (g_timerUpdateEvent) SetEvent(g_timerUpdateEvent);
+                SetEvent(updateEvent);
             }
         }
 
@@ -5582,9 +6981,77 @@ static DWORD WINAPI TimerThreadProc(void*) {
         // while the volume flyout is visible, otherwise refresh only every
         // 1.5 seconds or immediately after a media-state update.
         ULONGLONG nowTick = GetTickCount64();
+
+        // Display changes can add or remove secondary taskbar HWNDs without
+        // rebuilding the primary taskbar. Debounce a cheap topology snapshot
+        // and reuse the existing serialized monitor rebuild. If the widget's
+        // owner itself disappeared, don't touch its stale XAML from a different
+        // thread; TrayUI startup recovery remains the safe owner-replacement
+        // path.
+        if (nowTick >= nextTaskbarTopologyPollTick) {
+            nextTaskbarTopologyPollTick = nowTick + 1000;
+            uint64_t topology = GetTaskbarTopologyFingerprint();
+            if (topology != lastTaskbarTopology) {
+                lastTaskbarTopology = topology;
+                taskbarTopologyRebuildDueTick =
+                    topology ? nowTick + 750 : 0;
+                topologyOwnerWasLive = taskbarOwnerWasLive;
+            }
+        }
+        if (taskbarTopologyRebuildDueTick &&
+            nowTick >= taskbarTopologyRebuildDueTick) {
+            taskbarTopologyRebuildDueTick = 0;
+            ApplyTaskbarTransparencyToAll();
+            if (topologyOwnerWasLive && g_taskbarWnd &&
+                IsWindow(g_taskbarWnd)) {
+                Wh_Log(L"Taskbar topology changed; rebuilding monitor widgets");
+                QueueQuickMonitorRebuild();
+            } else {
+                Wh_Log(
+                    L"Taskbar topology changed with a replaced owner; "
+                    L"deferring widget injection to taskbar startup recovery");
+            }
+        }
+
+        // Windhawk can load after TrayUI::StartTaskbar has already fired, and
+        // early boot can expose the taskbar HWND before its XAML tree is ready.
+        // Retry one serialized, fail-closed injection per second instead of
+        // requiring the user to disable and re-enable the mod.
+        if (nowTick >= nextInjectionRetryTick &&
+            !g_hookInjectionInProgress.exchange(true)) {
+            bool dispatched = RunFromWindowThread(hWnd, [](void*) {
+                if (!g_unloading && !g_applyingSettings && !g_playerGrid) {
+                    try {
+                        InjectPlayerGrid();
+                    } catch (...) {
+                        Wh_Log(L"Startup recovery: taskbar injection failed");
+                    }
+                }
+                g_hookInjectionInProgress = false;
+            }, nullptr);
+            if (!dispatched) g_hookInjectionInProgress = false;
+            nextInjectionRetryTick = nowTick + 1000;
+        }
+
+        ULONGLONG retryUntil = g_metadataRetryUntilTick.load();
+        if (retryUntil != 0 && nowTick < retryUntil &&
+            nowTick >= nextMetadataRetryTick) {
+            bool hasSession = false;
+            {
+                std::lock_guard<std::mutex> lock(g_sessionMtx);
+                hasSession = g_currentSession != nullptr;
+            }
+            if (hasSession) {
+                FetchMediaPropertiesAsync();
+                FetchPlaybackInfoAsync();
+            }
+            nextMetadataRetryTick = nowTick + 750;
+        }
+
         bool volumePopupVisible = g_volumePopupWindow &&
                                   IsWindowVisible(g_volumePopupWindow);
-        bool mediaUpdateSignaled = wait == WAIT_OBJECT_0 + 2;
+        bool mediaUpdateSignaled =
+            wait == WAIT_OBJECT_0 + updateIndex;
         if (mediaUpdateSignaled || nowTick >= nextVolumePollTick) {
             int currentVolume = 0;
             bool currentMuted = false;
@@ -5644,22 +7111,20 @@ static DWORD WINAPI TimerThreadProc(void*) {
 
 static void StartTimerThread() {
     if (g_timerThread) return;
-    g_timerStopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    g_timerUpdateEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-    if (!g_timerStopEvent || !g_timerUpdateEvent) {
-        if (g_timerStopEvent) CloseHandle(g_timerStopEvent);
-        if (g_timerUpdateEvent) CloseHandle(g_timerUpdateEvent);
-        g_timerStopEvent = nullptr;
-        g_timerUpdateEvent = nullptr;
+    bool stopEventCreated =
+        CreateWorkerEventHandle(g_timerStopEvent, true, false);
+    bool updateEventCreated =
+        CreateWorkerEventHandle(g_timerUpdateEvent, false, false);
+    if (!stopEventCreated || !updateEventCreated) {
+        CloseWorkerEventHandle(g_timerStopEvent);
+        CloseWorkerEventHandle(g_timerUpdateEvent);
         return;
     }
 
     g_timerThread    = CreateThread(nullptr, 0, TimerThreadProc, nullptr, 0, nullptr);
     if (!g_timerThread) {
-        CloseHandle(g_timerStopEvent);
-        g_timerStopEvent = nullptr;
-        CloseHandle(g_timerUpdateEvent);
-        g_timerUpdateEvent = nullptr;
+        CloseWorkerEventHandle(g_timerStopEvent);
+        CloseWorkerEventHandle(g_timerUpdateEvent);
         return;
     }
 
@@ -5671,67 +7136,39 @@ static void StartTimerThread() {
 static void StopTimerThread() {
     StopDiscordPresenceThread();
     StopScrollTimer();
-    if (g_timerStopEvent) SetEvent(g_timerStopEvent);
+    SignalWorkerEventHandle(g_timerStopEvent);
     if (g_timerThread) {
-        DWORD tid = GetCurrentThreadId();
-        HWND hTaskbar = g_taskbarWnd;
-        bool isUiThread = hTaskbar && (GetWindowThreadProcessId(hTaskbar, nullptr) == tid);
-        if (isUiThread) {
-            DWORD result = WAIT_TIMEOUT;
-            DWORD deadline = GetTickCount() + 2000;
-            while (result == WAIT_TIMEOUT && GetTickCount() < deadline) {
-                result = MsgWaitForMultipleObjects(1, &g_timerThread, FALSE, 50, QS_SENDMESSAGE);
-                if (result == WAIT_OBJECT_0 + 1) {
-                    MSG msg;
-                    while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE | PM_QS_SENDMESSAGE)) {
-                        TranslateMessage(&msg);
-                        DispatchMessageW(&msg);
-                    }
-                    result = WAIT_TIMEOUT;
-                }
-            }
-        } else {
-            WaitForSingleObject(g_timerThread, 2000);
-        }
+        WaitForThreadExit(g_timerThread);
         CloseHandle(g_timerThread);
         g_timerThread = nullptr;
     }
-    if (g_timerStopEvent) { CloseHandle(g_timerStopEvent); g_timerStopEvent = nullptr; }
-    if (g_timerUpdateEvent) { CloseHandle(g_timerUpdateEvent); g_timerUpdateEvent = nullptr; }
+    CloseWorkerEventHandle(g_timerStopEvent);
+    CloseWorkerEventHandle(g_timerUpdateEvent);
 }
 
-static void RefreshThemeColors() {
-    if (!g_refreshingMirrorTheme && !g_mirrorPlayers.empty()) {
-        g_refreshingMirrorTheme = true;
-        Grid originalGrid = g_playerGrid;
-        RefreshThemeColors();
-        for (const auto& instance : g_mirrorPlayers) {
-            if (!instance || !instance->playerGrid) continue;
-            g_playerGrid = instance->playerGrid;
-            RefreshThemeColors();
-        }
-        g_playerGrid = originalGrid;
-        g_refreshingMirrorTheme = false;
+static void RefreshThemeColorsForGrid(
+    Grid const& playerGrid,
+    std::shared_ptr<PlayerVisualState> const& visualState) {
+    if (!playerGrid || !visualState || g_unloading || g_applyingSettings) {
         return;
     }
-    if (!g_playerGrid || g_unloading || g_applyingSettings) return;
     try {
-        UpdateHoverBrushColors();
-
         auto textClr = TextColor();
         auto artistClr = ArtistColor();
         auto buttonClr = ButtonColor();
 
-        if (auto bgFe = FindChildByName(g_playerGrid, L"FluentMedia_Background")) {
+        if (auto bgFe = FindChildByName(playerGrid, L"FluentMedia_Background")) {
             if (auto bgBorder = bgFe.try_as<Border>()) {
                 auto& bgType = g_settings.backgroundType;
 
                 if (bgType == L"album_art_blur") {
-                    if (!g_cachedThumbnailBytes.empty()) {
+                    if (!visualState->cachedThumbnailBytes.empty()) {
                         int w = (int)bgBorder.ActualWidth();
                         int h = (int)bgBorder.ActualHeight();
                         if (w > 0 && h > 0) {
-                            bgBorder.Background(MakeAlbumBlurBrush(g_cachedThumbnailBytes, w, h));
+                            bgBorder.Background(MakeAlbumBlurBrush(
+                                visualState->blurBgCache,
+                                visualState->cachedThumbnailBytes, w, h));
                         }
                     } else {
                         auto fallbackCol = IsSystemLightTheme()
@@ -5752,7 +7189,7 @@ static void RefreshThemeColors() {
             }
         }
 
-        if (auto fe = FindChildByName(g_playerGrid, L"FluentMedia_OuterBorder")) {
+        if (auto fe = FindChildByName(playerGrid, L"FluentMedia_OuterBorder")) {
             if (auto btn = fe.try_as<Button>()) {
                 try {
                     auto normalBg = MakeBackgroundBrush();
@@ -5764,14 +7201,17 @@ static void RefreshThemeColors() {
             }
         }
 
-        if (auto fe = FindChildByName(g_playerGrid, kTitleBlockName))
+        if (auto fe = FindChildByName(playerGrid, kTitleBlockName))
             if (auto tb = fe.try_as<TextBlock>()) tb.Foreground(MakeBrush(textClr));
 
-        if (auto fe = FindChildByName(g_playerGrid, kArtistBlockName))
+        if (auto fe = FindChildByName(playerGrid, kArtistBlockName))
             if (auto ab = fe.try_as<TextBlock>()) ab.Foreground(MakeBrush(artistClr));
 
-        for (const wchar_t* name : {kPrevBtnName, kPlayBtnName, kNextBtnName, kStopBtnName, kVolumeBtnName, kRewindBtnName, kForwardBtnName, kShuffleBtnName, kRepeatBtnName, kSwitchSessionsBtnName}) {
-            if (auto fe = FindChildByName(g_playerGrid, name)) {
+        for (const wchar_t* name : {kPrevBtnName, kPlayBtnName,
+                                    kNextBtnName, kVolumeBtnName,
+                                    kRewindBtnName, kForwardBtnName,
+                                    kShuffleBtnName, kRepeatBtnName}) {
+            if (auto fe = FindChildByName(playerGrid, name)) {
                 if (auto btn = fe.try_as<Button>()) {
                     if (auto ct = btn.Content().try_as<TextBlock>()) ct.Foreground(MakeBrush(buttonClr));
                     ApplyFreshFluentMediaButtonStyle(btn);
@@ -5782,6 +7222,29 @@ static void RefreshThemeColors() {
             }
         }
     } catch (...) {}
+}
+
+static void RefreshThemeColors() {
+    Grid primaryGrid = g_playerGrid;
+    if (primaryGrid) {
+        RefreshThemeColorsForGrid(primaryGrid, g_primaryVisualState);
+    }
+
+    auto mirrors = g_mirrorPlayers;
+    for (const auto& instance : mirrors) {
+        if (!instance || !instance->playerGrid || !instance->visualState) {
+            continue;
+        }
+        struct MirrorThemeWork {
+            std::shared_ptr<MirrorPlayerInstance> instance;
+        } work{instance};
+        RunFromWindowThread(instance->taskbarWindow, [](void* parameter) {
+            auto* workItem = static_cast<MirrorThemeWork*>(parameter);
+            auto const& mirror = workItem->instance;
+            RefreshThemeColorsForGrid(
+                mirror->playerGrid, mirror->visualState);
+        }, &work);
+    }
 }
 
 struct TaskbarWindowInfo {
@@ -5805,7 +7268,8 @@ static std::vector<TaskbarWindowInfo> EnumerateTaskbarWindows() {
         bool secondary = _wcsicmp(cls, L"Shell_SecondaryTrayWnd") == 0;
         if (!primary && !secondary) return TRUE;
 
-        MONITORINFO monitorInfo{sizeof(monitorInfo)};
+        MONITORINFO monitorInfo{};
+        monitorInfo.cbSize = sizeof(monitorInfo);
         RECT monitorRect{};
         if (HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST)) {
             if (GetMonitorInfoW(monitor, &monitorInfo)) {
@@ -5833,6 +7297,27 @@ static std::vector<TaskbarWindowInfo> EnumerateTaskbarWindows() {
     return windows;
 }
 
+static uint64_t GetTaskbarTopologyFingerprint() {
+    auto windows = EnumerateTaskbarWindows();
+    if (windows.empty()) return 0;
+
+    uint64_t hash = 1469598103934665603ULL;
+    auto mix = [&hash](uint64_t value) {
+        hash ^= value;
+        hash *= 1099511628211ULL;
+    };
+    mix(windows.size());
+    for (const auto& window : windows) {
+        mix(reinterpret_cast<UINT_PTR>(window.hWnd));
+        mix(window.primary ? 1 : 0);
+        mix(static_cast<uint32_t>(window.monitorRect.left));
+        mix(static_cast<uint32_t>(window.monitorRect.top));
+        mix(static_cast<uint32_t>(window.monitorRect.right));
+        mix(static_cast<uint32_t>(window.monitorRect.bottom));
+    }
+    return hash;
+}
+
 static HWND FindCurrentProcessTaskbarWnd() {
     auto windows = EnumerateTaskbarWindows();
     if (windows.empty()) return nullptr;
@@ -5858,6 +7343,106 @@ static HWND FindCurrentProcessTaskbarWnd() {
     return primary != windows.end() ? primary->hWnd : windows.front().hWnd;
 }
 
+enum class ShellExplorerProcessIdentity {
+    NonShell,
+    ConfirmedShell,
+    StartupCandidate,
+};
+
+static bool IsSystemExplorerWithoutArguments() {
+    wchar_t processPath[MAX_PATH]{};
+    DWORD processPathLength =
+        GetModuleFileNameW(nullptr, processPath, ARRAYSIZE(processPath));
+    if (!processPathLength || processPathLength >= ARRAYSIZE(processPath)) {
+        return false;
+    }
+
+    wchar_t windowsDirectory[MAX_PATH]{};
+    UINT windowsDirectoryLength =
+        GetWindowsDirectoryW(windowsDirectory, ARRAYSIZE(windowsDirectory));
+    if (!windowsDirectoryLength ||
+        windowsDirectoryLength >= ARRAYSIZE(windowsDirectory)) {
+        return false;
+    }
+
+    std::wstring expectedPath(windowsDirectory, windowsDirectoryLength);
+    if (!expectedPath.empty() &&
+        expectedPath.back() != L'\\' &&
+        expectedPath.back() != L'/') {
+        expectedPath.push_back(L'\\');
+    }
+    expectedPath += L"explorer.exe";
+    if (_wcsicmp(processPath, expectedPath.c_str()) != 0) {
+        return false;
+    }
+
+    int argumentCount = 0;
+    LPWSTR* arguments =
+        CommandLineToArgvW(GetCommandLineW(), &argumentCount);
+    if (!arguments) {
+        return false;
+    }
+
+    // The desktop shell is launched as explorer.exe without a target or
+    // switches. Separate folder/Control Panel hosts use arguments such as
+    // /factory and -Embedding. Treat the no-argument form only as a
+    // provisional candidate until this process creates the taskbar.
+    bool result = argumentCount == 1;
+    LocalFree(arguments);
+    return result;
+}
+
+static ShellExplorerProcessIdentity GetCurrentProcessShellExplorerIdentity() {
+    DWORD currentProcessId = GetCurrentProcessId();
+    DWORD shellProcessId = 0;
+    DWORD taskbarProcessId = 0;
+
+    if (HWND shellWindow = GetShellWindow()) {
+        GetWindowThreadProcessId(shellWindow, &shellProcessId);
+    }
+    if (HWND taskbarWindow = FindWindowW(L"Shell_TrayWnd", nullptr)) {
+        GetWindowThreadProcessId(taskbarWindow, &taskbarProcessId);
+    }
+
+    // During an Explorer restart the desktop and taskbar registrations can be
+    // updated a few milliseconds apart. Either authoritative window belonging
+    // to this PID is enough to confirm ownership.
+    if (shellProcessId == currentProcessId ||
+        taskbarProcessId == currentProcessId) {
+        return ShellExplorerProcessIdentity::ConfirmedShell;
+    }
+
+    // A registered shell/taskbar owned by another Explorer is authoritative.
+    // This keeps the mod out of separate folder and Control Panel processes.
+    if (shellProcessId || taskbarProcessId) {
+        return ShellExplorerProcessIdentity::NonShell;
+    }
+
+    // At cold sign-in Windhawk can initialize before Explorer calls
+    // SetShellWindowEx or creates Shell_TrayWnd. Do not permanently reject
+    // that process: accept only the system, no-argument Explorer as a startup
+    // candidate. FindCurrentProcessTaskbarWnd still gates all XAML injection
+    // on a taskbar window owned by this exact PID.
+    return IsSystemExplorerWithoutArguments()
+        ? ShellExplorerProcessIdentity::StartupCandidate
+        : ShellExplorerProcessIdentity::NonShell;
+}
+
+static bool IsReadableMemoryRange(const void* address, size_t size) {
+    if (!address || size == 0) return false;
+    MEMORY_BASIC_INFORMATION memory{};
+    if (!VirtualQuery(address, &memory, sizeof(memory)) ||
+        memory.State != MEM_COMMIT ||
+        (memory.Protect & (PAGE_GUARD | PAGE_NOACCESS))) {
+        return false;
+    }
+    const auto start = reinterpret_cast<uintptr_t>(address);
+    const auto regionStart = reinterpret_cast<uintptr_t>(memory.BaseAddress);
+    const auto regionEnd = regionStart + memory.RegionSize;
+    return start >= regionStart && start <= regionEnd &&
+           size <= regionEnd - start;
+}
+
 static XamlRoot GetTaskbarXamlRoot(HWND hTaskbarWnd) {
     wchar_t cls[64] = {};
     bool isSecondary = GetClassNameW(hTaskbarWnd, cls, ARRAYSIZE(cls)) &&
@@ -5880,11 +7465,15 @@ static XamlRoot GetTaskbarXamlRoot(HWND hTaskbarWnd) {
     if (!expectedVftable || !getTaskbarHost) return nullptr;
 
     void* taskBandForTaskListWndSite = taskBand;
-    for (int i = 0; *(void**)taskBandForTaskListWndSite !=
-                    expectedVftable;
-         i++) {
+    for (int i = 0; i <= 20; ++i) {
+        if (!IsReadableMemoryRange(taskBandForTaskListWndSite,
+                                   sizeof(void*))) {
+            return nullptr;
+        }
+        if (*(void**)taskBandForTaskListWndSite == expectedVftable) break;
         if (i == 20) return nullptr;
-        taskBandForTaskListWndSite = (void**)taskBandForTaskListWndSite + 1;
+        taskBandForTaskListWndSite =
+            (void**)taskBandForTaskListWndSite + 1;
     }
 
     void* taskbarHostSharedPtr[2]{};
@@ -5895,15 +7484,18 @@ static XamlRoot GetTaskbarXamlRoot(HWND hTaskbarWnd) {
         return nullptr;
     }
 
-    size_t taskbarElementIUnknownOffset = 0x10;
+    size_t taskbarElementIUnknownOffset = 0;
+    bool frameHeightPatternRecognized = false;
 #if defined(_M_X64) || defined(__x86_64__)
     {
         // 48:83EC 28 | sub rsp,28
         // 48:83C1 48 | add rcx,48
         const BYTE* b = (const BYTE*)TaskbarHost_FrameHeight_Original;
-        if (b[0] == 0x48 && b[1] == 0x83 && b[2] == 0xEC && b[4] == 0x48 &&
+        if (IsReadableMemoryRange(b, 8) &&
+            b[0] == 0x48 && b[1] == 0x83 && b[2] == 0xEC && b[4] == 0x48 &&
             b[5] == 0x83 && b[6] == 0xC1 && b[7] <= 0x7F) {
             taskbarElementIUnknownOffset = b[7];
+            frameHeightPatternRecognized = true;
         } else {
             Wh_Log(L"Unsupported TaskbarHost::FrameHeight pattern (x64)");
         }
@@ -5915,16 +7507,28 @@ static XamlRoot GetTaskbarXamlRoot(HWND hTaskbarWnd) {
         // fd030091 mov fp, sp
         // 080c41f8 ldr x8, [x0, #0x10]!
         const DWORD* p = (const DWORD*)TaskbarHost_FrameHeight_Original;
-        if (p[0] == 0xD503237F && (p[1] & 0xFFC07FFF) == 0xA9807BFD &&
+        if (IsReadableMemoryRange(p, sizeof(DWORD) * 4) &&
+            p[0] == 0xD503237F && (p[1] & 0xFFC07FFF) == 0xA9807BFD &&
             p[2] == 0x910003FD && (p[3] & 0xFFF00FE0) == 0xF8400C00) {
             taskbarElementIUnknownOffset = (p[3] >> 12) & 0xFF;
+            frameHeightPatternRecognized = true;
         } else {
             Wh_Log(L"Unsupported TaskbarHost::FrameHeight pattern (arm64)");
         }
     }
 #else
-    Wh_Log(L"GetTaskbarXamlRoot: Unknown architecture, using default offset 0x10");
+    Wh_Log(L"GetTaskbarXamlRoot: unsupported architecture");
 #endif
+
+    if (!frameHeightPatternRecognized ||
+        !IsReadableMemoryRange(
+            static_cast<BYTE*>(taskbarHostSharedPtr[0]) +
+                taskbarElementIUnknownOffset,
+            sizeof(IUnknown*))) {
+        if (taskbarHostSharedPtr[1] && Std_Ref_Decref_Original)
+            Std_Ref_Decref_Original(taskbarHostSharedPtr[1]);
+        return nullptr;
+    }
 
     auto* taskbarElementIUnknown =
         *(IUnknown**)((BYTE*)taskbarHostSharedPtr[0] +
@@ -5965,6 +7569,19 @@ static FrameworkElement FindDescendantByRuntimeClass(
     return nullptr;
 }
 
+struct TaskbarTransparencyState {
+    bool taskbarBackgroundCaptured = false;
+    double taskbarBackgroundOpacity = 1.0;
+    bool backgroundFillCaptured = false;
+    double backgroundFillOpacity = 1.0;
+    bool backgroundStrokeCaptured = false;
+    double backgroundStrokeOpacity = 1.0;
+};
+
+static std::mutex g_taskbarTransparencyMtx;
+static std::unordered_map<UINT_PTR, TaskbarTransparencyState>
+    g_taskbarTransparencyStates;
+
 static bool ApplyTaskbarTransparencyToWindow(HWND taskbarWindow,
                                               bool transparent) {
     try {
@@ -5981,46 +7598,169 @@ static bool ApplyTaskbarTransparencyToWindow(HWND taskbarWindow,
         auto taskbarBackground = FindDescendantByRuntimeClass(
             taskbarFrame, L"Taskbar.TaskbarBackground");
         if (taskbarBackground &&
-            taskbarBackground.Name() != L"HoverFlyoutBackgroundControl") {
-            taskbarBackground.Opacity(transparent ? 0.0 : 1.0);
-            Wh_Log(L"Taskbar transparency: %ls on %p",
-                   transparent ? L"enabled" : L"restored", taskbarWindow);
-            return true;
+            taskbarBackground.Name() == L"HoverFlyoutBackgroundControl") {
+            taskbarBackground = nullptr;
         }
 
-        // Fallback for taskbar builds where the background control's runtime
-        // class changed but the established XAML element names stayed intact.
-        bool changed = false;
-        for (const wchar_t* name : {L"BackgroundFill", L"BackgroundStroke"}) {
-            if (auto element = FindChildByName(taskbarFrame, name)) {
-                element.Opacity(transparent ? 0.0 : 1.0);
+        FrameworkElement backgroundFill =
+            FindChildByName(taskbarFrame, L"BackgroundFill");
+        FrameworkElement backgroundStroke =
+            FindChildByName(taskbarFrame, L"BackgroundStroke");
+        const UINT_PTR stateKey =
+            reinterpret_cast<UINT_PTR>(taskbarWindow);
+
+        if (transparent) {
+            bool changed = false;
+            if (taskbarBackground) {
+                double originalOpacity = taskbarBackground.Opacity();
+                {
+                    std::lock_guard<std::mutex> lock(
+                        g_taskbarTransparencyMtx);
+                    auto& state = g_taskbarTransparencyStates[stateKey];
+                    if (!state.taskbarBackgroundCaptured) {
+                        // A taskbar XAML rebuild can keep the HWND while
+                        // switching between the runtime-class and named
+                        // background variants. Captures from the old tree no
+                        // longer need restoration.
+                        state.backgroundFillCaptured = false;
+                        state.backgroundStrokeCaptured = false;
+                        state.taskbarBackgroundCaptured = true;
+                        state.taskbarBackgroundOpacity = originalOpacity;
+                    }
+                }
+                taskbarBackground.Opacity(0.0);
                 changed = true;
+            } else {
+                auto makeTransparent = [&](FrameworkElement const& element,
+                                           bool TaskbarTransparencyState::*captured,
+                                           double TaskbarTransparencyState::*opacity) {
+                    if (!element) return;
+                    double originalOpacity = element.Opacity();
+                    {
+                        std::lock_guard<std::mutex> lock(
+                            g_taskbarTransparencyMtx);
+                        auto& state = g_taskbarTransparencyStates[stateKey];
+                        if (!(state.*captured)) {
+                            state.*captured = true;
+                            state.*opacity = originalOpacity;
+                        }
+                    }
+                    element.Opacity(0.0);
+                    changed = true;
+                };
+                {
+                    std::lock_guard<std::mutex> lock(
+                        g_taskbarTransparencyMtx);
+                    auto& state = g_taskbarTransparencyStates[stateKey];
+                    if (!state.backgroundFillCaptured &&
+                        !state.backgroundStrokeCaptured) {
+                        state.taskbarBackgroundCaptured = false;
+                    }
+                }
+                makeTransparent(
+                    backgroundFill,
+                    &TaskbarTransparencyState::backgroundFillCaptured,
+                    &TaskbarTransparencyState::backgroundFillOpacity);
+                makeTransparent(
+                    backgroundStroke,
+                    &TaskbarTransparencyState::backgroundStrokeCaptured,
+                    &TaskbarTransparencyState::backgroundStrokeOpacity);
+            }
+            if (changed) {
+                Wh_Log(L"Taskbar transparency: enabled on %p",
+                       taskbarWindow);
+            }
+            return changed;
+        }
+
+        TaskbarTransparencyState state;
+        {
+            std::lock_guard<std::mutex> lock(g_taskbarTransparencyMtx);
+            auto entry = g_taskbarTransparencyStates.find(stateKey);
+            if (entry == g_taskbarTransparencyStates.end()) {
+                // The mod never changed this taskbar, so leave any theme or
+                // third-party opacity exactly as it is.
+                return true;
+            }
+            state = entry->second;
+        }
+
+        bool restoredAny = false;
+        bool restoredAll = true;
+        if (state.taskbarBackgroundCaptured) {
+            if (taskbarBackground) {
+                taskbarBackground.Opacity(state.taskbarBackgroundOpacity);
+                restoredAny = true;
+            } else {
+                restoredAll = false;
             }
         }
-        if (changed) {
-            Wh_Log(L"Taskbar transparency: %ls via named background elements on %p",
-                   transparent ? L"enabled" : L"restored", taskbarWindow);
+        if (state.backgroundFillCaptured) {
+            if (backgroundFill) {
+                backgroundFill.Opacity(state.backgroundFillOpacity);
+                restoredAny = true;
+            } else {
+                restoredAll = false;
+            }
         }
-        return changed;
+        if (state.backgroundStrokeCaptured) {
+            if (backgroundStroke) {
+                backgroundStroke.Opacity(state.backgroundStrokeOpacity);
+                restoredAny = true;
+            } else {
+                restoredAll = false;
+            }
+        }
+
+        if (restoredAll) {
+            std::lock_guard<std::mutex> lock(g_taskbarTransparencyMtx);
+            g_taskbarTransparencyStates.erase(stateKey);
+        }
+        if (restoredAny) {
+            Wh_Log(L"Taskbar transparency: restored prior opacity on %p",
+                   taskbarWindow);
+        }
+        return restoredAll;
     } catch (...) {
         Wh_Log(L"Taskbar transparency: failed on %p", taskbarWindow);
         return false;
     }
 }
 
-static void ApplyTaskbarTransparencyToAll() {
+static void ApplyTaskbarTransparencyToAll(bool shutdownCleanup) {
     const bool transparent = g_settings.transparentTaskbar;
-    for (const auto& taskbar : EnumerateTaskbarWindows()) {
+    auto taskbars = EnumerateTaskbarWindows();
+    for (const auto& taskbar : taskbars) {
         struct TransparencyWork {
             HWND window;
             bool transparent;
         } work{taskbar.hWnd, transparent};
 
-        RunFromWindowThread(taskbar.hWnd, [](void* param) {
+        auto apply = [](void* param) {
             auto* workItem = static_cast<TransparencyWork*>(param);
             ApplyTaskbarTransparencyToWindow(
                 workItem->window, workItem->transparent);
-        }, &work);
+        };
+        if (shutdownCleanup) {
+            RunFromWindowThreadForCleanup(
+                taskbar.hWnd, apply, &work);
+        } else {
+            RunFromWindowThread(taskbar.hWnd, apply, &work);
+        }
+    }
+
+    // A disconnected monitor destroys its taskbar, so there is no live XAML
+    // element left to restore. Drop only those dead-window snapshots; live
+    // restore failures remain available for a later taskbar/settings pass.
+    std::lock_guard<std::mutex> lock(g_taskbarTransparencyMtx);
+    for (auto entry = g_taskbarTransparencyStates.begin();
+         entry != g_taskbarTransparencyStates.end();) {
+        HWND window = reinterpret_cast<HWND>(entry->first);
+        if (!IsWindow(window)) {
+            entry = g_taskbarTransparencyStates.erase(entry);
+        } else {
+            ++entry;
+        }
     }
 }
 
@@ -6044,8 +7784,6 @@ static const wchar_t* GetGlyph(int cmd, bool isPlaying = false) {
         case 3:
             if (isFilled) return L"\uF8AD";
             return L"\uE893";
-        case 4:
-            return L"\uE71A";
         case 5:
             if (isFilled) return L"\uE627";
             return L"\uEB9E";
@@ -6062,8 +7800,6 @@ static const wchar_t* GetGlyph(int cmd, bool isPlaying = false) {
                 case RepeatMode::One: return L"\uE8ED";
             }
         }
-        case 9:
-            return L"\uE974";
         case 10: return L"\uF5E7";
         case 11: return L"\uE8EE";
         case 12: return L"\uE8ED";
@@ -6161,18 +7897,26 @@ static Button MakeControlButton(int cmd, bool isPlaying, winrt::Windows::UI::Col
 
         auto isPressed = std::make_shared<bool>(false);
         auto isHovered = std::make_shared<bool>(false);
+        auto weakButton = winrt::make_weak(btn);
 
-        auto updateBtnVisualState = [btn, isPressed, isHovered]() {
+        auto updateBtnVisualState = [weakButton, isPressed, isHovered]() {
             try {
-                GoToCommonState(btn, IsHoverEffectEnabled(g_settings.mediaButtonsHoverEffectMode), *isPressed, *isHovered);
+                if (auto button = weakButton.get()) {
+                    GoToCommonState(
+                        button,
+                        IsHoverEffectEnabled(
+                            g_settings.mediaButtonsHoverEffectMode),
+                        *isPressed, *isHovered);
+                }
             } catch (...) {
 
             }
         };
 
-        RunWhenButtonReady(btn, [btn, updateBtnVisualState]() {
+        RunWhenButtonReady(btn, [updateBtnVisualState](
+                                    Button const& readyButton) {
             try {
-                SetupMediaButtonCommonStates(btn);
+                SetupMediaButtonCommonStates(readyButton);
                 updateBtnVisualState();
             } catch (...) {
                 Wh_Log(L"MakeControlButton: Exception in RunWhenButtonReady");
@@ -6305,51 +8049,166 @@ static MenuFlyoutItem MakeActionContextMenuItem(const wchar_t* glyph, const wcha
     return item;
 }
 
-static void QueueQuickSettingsRebuild() {
-    if (g_unloading) return;
-    try {
-        auto coreWindow = winrt::Windows::UI::Core::CoreWindow::GetForCurrentThread();
-        if (!coreWindow) {
-            ApplySettings();
-            return;
+static std::mutex g_quickRebuildMtx;
+static uint64_t g_quickRebuildGeneration = 0;
+static bool g_quickRebuildWorkerRunning = false;
+static bool g_quickRebuildNeedsMonitorMove = false;
+
+static bool AcquireSettingsApplyGateForFullApply() {
+    while (!g_unloading) {
+        bool expected = false;
+        if (g_applyingSettings.compare_exchange_weak(
+                expected, true, std::memory_order_acq_rel)) {
+            return true;
         }
-        coreWindow.Dispatcher().RunAsync(
-            winrt::Windows::UI::Core::CoreDispatcherPriority::Normal,
-            []() {
-                if (g_unloading) return;
-                ApplySettings();
-                g_needsUiUpdate = true;
-            });
-    } catch (...) {
-        ApplySettings();
+
+        // A quick rebuild can be synchronously dispatching to this very UI
+        // thread. Pump sent messages while waiting so the owner can finish and
+        // release the gate instead of timing out or deadlocking.
+        MsgWaitForMultipleObjectsEx(
+            0, nullptr, 25, QS_SENDMESSAGE, MWMO_INPUTAVAILABLE);
+        MSG message{};
+        while (PeekMessageW(
+            &message, nullptr, 0, 0, PM_REMOVE | PM_QS_SENDMESSAGE)) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
     }
+    return false;
+}
+
+static void FinishQuickRebuildWorker() {
+    std::lock_guard<std::mutex> lock(g_quickRebuildMtx);
+    g_quickRebuildWorkerRunning = false;
+}
+
+static bool ApplyQuickMonitorRebuild() {
+    HWND previousTaskbar = g_taskbarWnd;
+    StopScrollTimer();
+
+    if (previousTaskbar && IsWindow(previousTaskbar)) {
+        bool removed = RunFromWindowThread(previousTaskbar, [](void*) {
+            if (g_unloading) return;
+            RemovePlayerGrid();
+        }, nullptr);
+        if (!removed) {
+            Wh_Log(
+                L"Quick monitor rebuild: old taskbar cleanup failed; "
+                L"leaving the current widget intact");
+            return false;
+        }
+    } else if (g_playerGrid) {
+        Wh_Log(
+            L"Quick monitor rebuild: old taskbar owner is unavailable; "
+            L"deferring to taskbar startup recovery");
+        return false;
+    }
+
+    if (g_unloading) return false;
+    HWND requestedTaskbar = FindCurrentProcessTaskbarWnd();
+    if (!requestedTaskbar) return false;
+    g_taskbarWnd = requestedTaskbar;
+
+    return RunFromWindowThread(requestedTaskbar, [](void*) {
+        if (g_unloading) return;
+        InjectPlayerGrid();
+        if (g_settings.enableTitleScrolling ||
+            g_settings.enableArtistScrolling) {
+            StartScrollTimer();
+        }
+        g_needsUiUpdate = true;
+    }, nullptr);
+}
+
+static void QueueQuickRebuild(bool monitorMove) {
+    if (g_unloading) return;
+
+    bool startWorker = false;
+    {
+        std::lock_guard<std::mutex> lock(g_quickRebuildMtx);
+        ++g_quickRebuildGeneration;
+        g_quickRebuildNeedsMonitorMove =
+            g_quickRebuildNeedsMonitorMove || monitorMove;
+        if (!g_quickRebuildWorkerRunning) {
+            g_quickRebuildWorkerRunning = true;
+            startWorker = true;
+        }
+    }
+    if (!startWorker) return;
+
+    bool queued = QueueAsyncTask([]() {
+        while (!g_unloading) {
+            // Coalesce clicks made while the flyout is closing, including a
+            // position click immediately followed by a monitor click.
+            Sleep(25);
+
+            uint64_t generation = 0;
+            bool monitorMove = false;
+            {
+                std::lock_guard<std::mutex> lock(g_quickRebuildMtx);
+                generation = g_quickRebuildGeneration;
+                monitorMove = g_quickRebuildNeedsMonitorMove;
+                g_quickRebuildNeedsMonitorMove = false;
+            }
+
+            bool expected = false;
+            if (!g_applyingSettings.compare_exchange_strong(
+                    expected, true, std::memory_order_acq_rel)) {
+                // A full Windhawk settings apply owns the lifecycle. Its
+                // LoadSettings pass consumes the persisted quick overrides,
+                // so this worker must not race or wait inside its async drain.
+                break;
+            }
+
+            bool rebuilt = false;
+            if (!g_unloading) {
+                if (monitorMove) {
+                    rebuilt = ApplyQuickMonitorRebuild();
+                } else {
+                    HWND taskbarWindow = g_taskbarWnd;
+                    if (taskbarWindow && IsWindow(taskbarWindow)) {
+                        rebuilt = RunFromWindowThread(
+                            taskbarWindow, [](void*) {
+                                if (g_unloading) return;
+                                ApplySettings();
+                                g_needsUiUpdate = true;
+                            }, nullptr);
+                    }
+                }
+            }
+            g_applyingSettings.store(false, std::memory_order_release);
+
+            if (rebuilt) {
+                SignalWorkerEventHandle(g_timerUpdateEvent);
+            }
+
+            bool finished = false;
+            {
+                std::lock_guard<std::mutex> lock(g_quickRebuildMtx);
+                if (generation == g_quickRebuildGeneration) {
+                    g_quickRebuildWorkerRunning = false;
+                    finished = true;
+                }
+            }
+            if (finished) return;
+        }
+
+        FinishQuickRebuildWorker();
+    });
+
+    if (!queued) FinishQuickRebuildWorker();
+}
+
+static void QueueQuickSettingsRebuild() {
+    QueueQuickRebuild(false);
 }
 
 static void QueueQuickMonitorRebuild() {
-    if (g_unloading) return;
-    try {
-        auto coreWindow = winrt::Windows::UI::Core::CoreWindow::GetForCurrentThread();
-        if (!coreWindow) return;
-        coreWindow.Dispatcher().RunAsync(
-            winrt::Windows::UI::Core::CoreDispatcherPriority::Normal,
-            []() {
-                if (g_unloading) return;
-                try { RemovePlayerGrid(); } catch (...) {}
-                HWND requestedTaskbar = FindCurrentProcessTaskbarWnd();
-                if (!requestedTaskbar) return;
-                g_taskbarWnd = requestedTaskbar;
-                RunFromWindowThread(requestedTaskbar, [](void*) {
-                    if (g_unloading) return;
-                    InjectPlayerGrid();
-                    UpdateVisibility();
-                    g_needsUiUpdate = true;
-                }, nullptr);
-            });
-    } catch (...) {}
+    QueueQuickRebuild(true);
 }
 
 static void OpenWindhawk() {
-    std::thread([]() {
+    QueueAsyncTask([]() {
         wchar_t expanded[MAX_PATH]{};
         ExpandEnvironmentStringsW(L"%ProgramFiles%\\Windhawk\\windhawk.exe", expanded, MAX_PATH);
 
@@ -6359,7 +8218,49 @@ static void OpenWindhawk() {
         } else {
             ShellExecuteW(nullptr, L"open", L"windhawk.exe", nullptr, nullptr, SW_SHOWNORMAL);
         }
-    }).detach();
+    });
+}
+
+struct MediaSourceMenuEntry {
+    std::wstring appId;
+    std::wstring label;
+    bool playing = false;
+};
+
+static std::vector<MediaSourceMenuEntry> EnumerateMediaSourcesForMenu() {
+    GlobalSystemMediaTransportControlsSessionManager manager{nullptr};
+    {
+        std::lock_guard<std::mutex> lock(g_sessionMtx);
+        manager = g_sessionMgr;
+    }
+    if (!manager) return {};
+
+    std::vector<MediaSourceMenuEntry> result;
+    std::set<std::wstring> seen;
+    try {
+        for (auto const& session : manager.GetSessions()) {
+            try {
+                std::wstring appId(session.SourceAppUserModelId());
+                if (appId.empty() || IsIgnoredMediaApp(appId)) continue;
+                std::wstring key = ToLowerCopy(appId);
+                if (!seen.insert(key).second) continue;
+
+                bool playing = false;
+                if (auto info = session.GetPlaybackInfo()) {
+                    playing = info.PlaybackStatus() ==
+                        GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing;
+                }
+                result.push_back({appId, FriendlyMediaAppName(appId), playing});
+            } catch (...) {}
+        }
+    } catch (...) {}
+
+    std::sort(result.begin(), result.end(), [](const auto& first,
+                                                const auto& second) {
+        if (first.playing != second.playing) return first.playing;
+        return _wcsicmp(first.label.c_str(), second.label.c_str()) < 0;
+    });
+    return result;
 }
 
 static void ShowMediaContextMenu(FrameworkElement const& target) {
@@ -6395,6 +8296,57 @@ static void ShowMediaContextMenu(FrameworkElement const& target) {
                 ApplyTaskbarTransparencyToAll();
             }));
 
+        MenuFlyoutSubItem sourceMenu;
+        sourceMenu.Text(L"Media source");
+        try {
+            FontIcon icon;
+            icon.Glyph(L"\uE8D6");
+            icon.FontFamily(FontFamily(L"Segoe MDL2 Assets"));
+            sourceMenu.Icon(icon);
+        } catch (...) {}
+
+        std::wstring preferredApp = GetPreferredMediaApp();
+        std::wstring automaticLabel = preferredApp.empty()
+            ? L"\u2713 Automatic (currently playing)"
+            : L"Automatic (currently playing)";
+        sourceMenu.Items().Append(MakeActionContextMenuItem(
+            L"\uE8D6", automaticLabel.c_str(), []() {
+                SelectMediaSource(L"", true);
+            }));
+
+        auto mediaSources = EnumerateMediaSourcesForMenu();
+        if (!mediaSources.empty() || !preferredApp.empty()) {
+            try {
+                Controls::MenuFlyoutSeparator separator;
+                sourceMenu.Items().Append(separator);
+            } catch (...) {}
+        }
+
+        bool preferredIsActive = false;
+        for (const auto& source : mediaSources) {
+            bool selected = !preferredApp.empty() &&
+                _wcsicmp(preferredApp.c_str(), source.appId.c_str()) == 0;
+            preferredIsActive = preferredIsActive || selected;
+            std::wstring label = selected
+                ? std::wstring(L"\u2713 ") + source.label
+                : source.label;
+            if (source.playing) label += L" (playing)";
+            sourceMenu.Items().Append(MakeActionContextMenuItem(
+                L"\uE768", label.c_str(), [appId = source.appId]() {
+                    SelectMediaSource(appId, true);
+                }));
+        }
+
+        if (!preferredApp.empty() && !preferredIsActive) {
+            std::wstring label = L"\u2713 " +
+                FriendlyMediaAppName(preferredApp) + L" (not active)";
+            sourceMenu.Items().Append(MakeActionContextMenuItem(
+                L"\uE768", label.c_str(), [appId = preferredApp]() {
+                    SelectMediaSource(appId, true);
+                }));
+        }
+        menu.Items().Append(sourceMenu);
+
         MenuFlyoutSubItem positionMenu;
         positionMenu.Text(L"Position");
         try {
@@ -6418,7 +8370,9 @@ static void ShowMediaContextMenu(FrameworkElement const& target) {
                     } else if (preset == L"left") {
                         g_settings.position = L"taskbar_left_start";
                     } else if (preset == L"middle") {
-                        g_settings.position = L"taskbar_center_edge";
+                        g_settings.position = IsWindowsTaskbarCentered()
+                            ? L"taskbar_far_left_reserved"
+                            : L"taskbar_center_edge";
                     } else if (preset == L"right") {
                         g_settings.position = L"tray_left";
                     }
@@ -6429,7 +8383,10 @@ static void ShowMediaContextMenu(FrameworkElement const& target) {
 
         appendPosition(L"After applications", L"apps", 0);
         appendPosition(L"Left of Start", L"left", 1);
-        appendPosition(L"Middle", L"middle", 2);
+        appendPosition(IsWindowsTaskbarCentered()
+                           ? L"Far left (centered Windows taskbar)"
+                           : L"Middle",
+                       L"middle", 2);
         appendPosition(L"Before system tray", L"right", 3);
 
         std::wstring customLabel = g_settings.positionPreset == L"custom"
@@ -6825,8 +8782,6 @@ static Grid BuildPlayerGrid() {
                         if (delta > 0) SendMediaCommandAsync(3);
                         else if (delta < 0) SendMediaCommandAsync(1);
                         DispatchMediaUpdate();
-                    } else if (action == L"switch_sessions") {
-                        if (delta != 0) SwitchMediaSession();
                     } else if (action == L"app_sound") {
                         AdjustCurrentMediaAppVolumeAsync(delta);
                     }
@@ -7005,8 +8960,11 @@ static Grid BuildPlayerGrid() {
 
                     auto geo = winrt::Windows::UI::Xaml::Media::RectangleGeometry();
                     scrollView.Clip(geo);
-                    block.SizeChanged([scrollView, geo](winrt::Windows::Foundation::IInspectable const&, SizeChangedEventArgs const& e) mutable {
+                    auto weakScrollView = winrt::make_weak(scrollView);
+                    block.SizeChanged([weakScrollView, geo](winrt::Windows::Foundation::IInspectable const&, SizeChangedEventArgs const& e) mutable {
                         try {
+                            auto scrollView = weakScrollView.get();
+                            if (!scrollView) return;
                             double h = e.NewSize().Height;
                             if (h < 1.0) h = 16.0;
                             double w = scrollView.Width();
@@ -7161,9 +9119,6 @@ static Grid BuildPlayerGrid() {
                         case MediaButtonType::Next:
                             btn.Name(kNextBtnName);
                             break;
-                        case MediaButtonType::Stop:
-                            btn.Name(kStopBtnName);
-                            break;
                         case MediaButtonType::Rewind5s:
                             btn.Name(kRewindBtnName);
                             break;
@@ -7175,9 +9130,6 @@ static Grid BuildPlayerGrid() {
                             break;
                         case MediaButtonType::Repeat:
                             btn.Name(kRepeatBtnName);
-                            break;
-                        case MediaButtonType::SwitchSessions:
-                            btn.Name(kSwitchSessionsBtnName);
                             break;
                         case MediaButtonType::Volume:
                             btn.Name(kVolumeBtnName);
@@ -7258,22 +9210,26 @@ static Grid BuildPlayerGrid() {
         auto isHovered = std::make_shared<bool>(false);
 
         Brush playerNormalBg = MakeBackgroundBrush();
+        auto weakPlayerButton = winrt::make_weak(playerButton);
+        auto weakWrapper = winrt::make_weak(wrapper);
 
-        auto updatePlayerVisualState = [playerButton, playerNormalBg, isPressed, isHovered]() {
-            ApplyPlayerButtonState(playerButton, playerNormalBg, *isHovered, *isPressed);
+        auto updatePlayerVisualState = [weakPlayerButton, playerNormalBg,
+                                        isPressed, isHovered]() {
+            if (auto button = weakPlayerButton.get()) {
+                ApplyPlayerButtonState(
+                    button, playerNormalBg, *isHovered, *isPressed);
+            }
         };
 
-        RunWhenButtonReady(playerButton, [playerButton, playerNormalBg]() {
+        RunWhenButtonReady(playerButton, [playerNormalBg](
+                                             Button const& readyButton) {
             try {
-                SetupPlayerCommonStates(playerButton, playerNormalBg);
-                GoToCommonState(playerButton, IsHoverEffectEnabled(g_settings.playerHoverEffectMode), false, false);
-            } catch (...) {}
-        });
-
-        wrapper.Loaded([playerButton, playerNormalBg](auto const&, auto const&) {
-            try {
-                SetupPlayerCommonStates(playerButton, playerNormalBg);
-                GoToCommonState(playerButton, IsHoverEffectEnabled(g_settings.playerHoverEffectMode), false, false);
+                SetupPlayerCommonStates(readyButton, playerNormalBg);
+                GoToCommonState(
+                    readyButton,
+                    IsHoverEffectEnabled(
+                        g_settings.playerHoverEffectMode),
+                    false, false);
             } catch (...) {}
         });
 
@@ -7282,11 +9238,13 @@ static Grid BuildPlayerGrid() {
             updatePlayerVisualState();
         });
 
-        panel.PointerExited([wrapper, isHovered, updatePlayerVisualState](auto const&, PointerRoutedEventArgs const& e) {
+        panel.PointerExited([weakWrapper, isHovered, updatePlayerVisualState](auto const&, PointerRoutedEventArgs const& e) {
             bool stillInside = false;
             try {
-                auto pos = e.GetCurrentPoint(wrapper).Position();
-                auto bounds = wrapper.RenderSize();
+                auto wrapperElement = weakWrapper.get();
+                if (!wrapperElement) return;
+                auto pos = e.GetCurrentPoint(wrapperElement).Position();
+                auto bounds = wrapperElement.RenderSize();
                 stillInside = pos.X >= 0 && pos.X <= bounds.Width && pos.Y >= 0 && pos.Y <= bounds.Height;
             } catch (...) {}
             if (!stillInside) {
@@ -7388,8 +9346,6 @@ static Grid BuildPlayerGrid() {
                 if (delta > 0) SendMediaCommandAsync(3);
                 else if (delta < 0) SendMediaCommandAsync(1);
                 DispatchMediaUpdate();
-            } else if (action == L"switch_sessions") {
-                if (delta != 0) SwitchMediaSession();
             } else if (action == L"app_sound") {
                 AdjustCurrentMediaAppVolumeAsync(delta);
             }
@@ -7641,9 +9597,21 @@ static double FindRightmostTaskbarItemEdge(
             if (child.Visibility() == Visibility::Visible) {
                 double width = child.ActualWidth();
                 double height = child.ActualHeight();
+                std::wstring typeName(
+                    winrt::get_class_name(child));
+                std::wstring elementName(child.Name());
+                bool isTaskbarItem =
+                    typeName.find(L"Button") != std::wstring::npos ||
+                    typeName.find(L"TaskList") != std::wstring::npos ||
+                    typeName.find(L"TaskbarExtensionElement") !=
+                        std::wstring::npos ||
+                    elementName == L"StartButton" ||
+                    elementName == L"SearchBoxButton" ||
+                    elementName == L"AugmentedEntryPointButton";
                 // Individual Start/Search/app buttons are compact. Excluding
                 // stretched layout panels prevents selecting the tray edge.
-                if (width > 1.0 && width <= 400.0 && height > 1.0) {
+                if (isTaskbarItem && width > 1.0 && width <= 400.0 &&
+                    height > 1.0) {
                     auto transform = child.TransformToVisual(relativeTo);
                     auto point = transform.TransformPoint({0, 0});
                     double edge = point.X + width;
@@ -7661,6 +9629,19 @@ static double FindRightmostTaskbarItemEdge(
     }
 
     return rightmost;
+}
+
+static double FindSystemTrayLeftEdge(
+    FrameworkElement const& root, FrameworkElement const& relativeTo) {
+    if (!root || !relativeTo) return -1.0;
+    try {
+        auto tray = FindChildByName(root, L"SystemTrayFrameGrid");
+        if (!tray) return -1.0;
+        auto transform = tray.TransformToVisual(relativeTo);
+        return transform.TransformPoint({0, 0}).X;
+    } catch (...) {
+        return -1.0;
+    }
 }
 
 static FrameworkElement FindTrayElement(FrameworkElement const& trayGrid, FrameworkElement const& root, const wchar_t* name) {
@@ -7789,6 +9770,7 @@ static InjectionTarget ResolveInjectionTarget(
         position == L"taskbar_after_taskview_right"||
         position == L"taskbar_after_widgets_left"||
         position == L"taskbar_after_widgets_right"||
+        position == L"taskbar_far_left_reserved" ||
         position == L"taskbar_left_edge"   ||
         position == L"taskbar_center_edge" ||
         position == L"taskbar_right_edge")
@@ -7825,6 +9807,10 @@ static FrameworkElement FindTrackingElementForPosition(
     auto repeater = FindChildByName(targetGrid, L"TaskbarFrameRepeater");
     if (!repeater) return nullptr;
 
+    if (position == L"taskbar_far_left_reserved") {
+        placeBefore = true;
+        return repeater;
+    }
     if (position == L"taskbar_after_apps") return repeater;
     if (position == L"taskbar_left_start" || position == L"taskbar_right_start") {
         placeBefore = position == L"taskbar_left_start";
@@ -7921,8 +9907,12 @@ static bool InjectMirrorPlayer(HWND taskbarWindow) {
                 if (tracked) {
                     instance->trackedElement = tracked;
                     instance->trackedOriginalMargin = tracked.Margin();
+                    std::weak_ptr<MirrorPlayerInstance> weakInstance =
+                        instance;
                     instance->layoutUpdatedToken = targetGrid.LayoutUpdated(
-                        [instance, placeBefore](auto const&, auto const&) {
+                        [weakInstance, placeBefore](auto const&, auto const&) {
+                            auto instance = weakInstance.lock();
+                            if (!instance) return;
                             if (g_unloading || !instance->playerGrid ||
                                 !instance->trackedElement) return;
                             try {
@@ -7932,8 +9922,14 @@ static bool InjectMirrorPlayer(HWND taskbarWindow) {
                                     ? width + g_settings.playerMarginLeft + g_settings.playerMarginRight
                                     : 0.0;
                                 auto margin = instance->trackedOriginalMargin;
-                                if (placeBefore) margin.Left += gap;
-                                else margin.Right += gap;
+                                bool centeredAfterApps =
+                                    g_settings.position ==
+                                        L"taskbar_after_apps" &&
+                                    IsWindowsTaskbarCentered();
+                                if (!centeredAfterApps) {
+                                    if (placeBefore) margin.Left += gap;
+                                    else margin.Right += gap;
+                                }
                                 instance->trackedElement.Margin(margin);
 
                                 auto transform = instance->trackedElement.TransformToVisual(
@@ -7948,6 +9944,16 @@ static bool InjectMirrorPlayer(HWND taskbarWindow) {
                                         ? appEdge + g_settings.playerMarginLeft
                                         : point.X + instance->trackedElement.ActualWidth() +
                                             g_settings.playerMarginLeft;
+                                    double trayLeft = FindSystemTrayLeftEdge(
+                                        instance->targetGrid,
+                                        instance->targetGrid);
+                                    if (centeredAfterApps &&
+                                        trayLeft >= 0.0 &&
+                                        x + width +
+                                                g_settings.playerMarginRight >
+                                            trayLeft - 4.0) {
+                                        x = g_settings.playerMarginLeft;
+                                    }
                                 } else {
                                     x = placeBefore
                                         ? point.X - gap + g_settings.playerMarginLeft
@@ -7994,32 +10000,109 @@ static void InjectConfiguredMirrorPlayers() {
     }
 }
 
-static void RemoveMirrorPlayers() {
-    for (auto& instance : g_mirrorPlayers) {
+static bool RemoveMirrorPlayers() {
+    auto mirrors = g_mirrorPlayers;
+    std::vector<std::shared_ptr<MirrorPlayerInstance>> survivors;
+    survivors.reserve(mirrors.size());
+
+    for (auto& instance : mirrors) {
         if (!instance) continue;
-        try {
-            if (instance->layoutUpdatedToken.value && instance->targetGrid) {
-                instance->targetGrid.LayoutUpdated(instance->layoutUpdatedToken);
+        struct MirrorRemovalWork {
+            std::shared_ptr<MirrorPlayerInstance> instance;
+            bool cleaned = false;
+        } work{instance};
+        bool dispatched = RunFromWindowThread(
+            instance->taskbarWindow, [](void* parameter) {
+            auto* workItem = static_cast<MirrorRemovalWork*>(parameter);
+            auto const& mirror = workItem->instance;
+            if (!mirror) {
+                workItem->cleaned = true;
+                return;
             }
-            if (instance->trackedElement) {
-                instance->trackedElement.Margin(instance->trackedOriginalMargin);
-            }
-            if (instance->targetGrid) {
-                int playerColumn = RemovePlayerGridChildren(instance->targetGrid);
-                if (instance->playerColumn >= 0 && playerColumn >= 0 &&
-                    playerColumn < (int)instance->targetGrid.ColumnDefinitions().Size()) {
-                    for (uint32_t i = 0; i < instance->targetGrid.Children().Size(); ++i) {
-                        auto child = instance->targetGrid.Children().GetAt(i).try_as<FrameworkElement>();
-                        if (child && Grid::GetColumn(child) > playerColumn) {
-                            Grid::SetColumn(child, Grid::GetColumn(child) - 1);
-                        }
-                    }
-                    instance->targetGrid.ColumnDefinitions().RemoveAt(playerColumn);
+
+            bool callbackRevoked = !mirror->layoutUpdatedToken.value;
+            if (mirror->layoutUpdatedToken.value && mirror->targetGrid) {
+                try {
+                    mirror->targetGrid.LayoutUpdated(
+                        mirror->layoutUpdatedToken);
+                    mirror->layoutUpdatedToken = {};
+                    callbackRevoked = true;
+                } catch (...) {
+                    callbackRevoked = false;
                 }
             }
-        } catch (...) {}
+
+            try {
+                if (mirror->trackedElement) {
+                    mirror->trackedElement.Margin(
+                        mirror->trackedOriginalMargin);
+                }
+            } catch (...) {}
+
+            bool playerDetached = !mirror->playerGrid;
+            try {
+                if (mirror->targetGrid) {
+                    const int recordedPlayerColumn =
+                        mirror->playerColumn;
+                    RemovePlayerGridChildren(mirror->targetGrid);
+                    if (recordedPlayerColumn >= 0 &&
+                        recordedPlayerColumn <
+                            (int)mirror->targetGrid.ColumnDefinitions().Size()) {
+                        for (uint32_t i = 0;
+                             i < mirror->targetGrid.Children().Size(); ++i) {
+                            auto child = mirror->targetGrid.Children()
+                                             .GetAt(i)
+                                             .try_as<FrameworkElement>();
+                            if (child &&
+                                Grid::GetColumn(child) >
+                                    recordedPlayerColumn) {
+                                Grid::SetColumn(
+                                    child, Grid::GetColumn(child) - 1);
+                            }
+                        }
+                        mirror->targetGrid.ColumnDefinitions().RemoveAt(
+                            recordedPlayerColumn);
+                        mirror->playerColumn = -1;
+                    }
+
+                    playerDetached = true;
+                    for (uint32_t i = 0;
+                         i < mirror->targetGrid.Children().Size(); ++i) {
+                        auto child = mirror->targetGrid.Children()
+                                         .GetAt(i)
+                                         .try_as<FrameworkElement>();
+                        if (child && child.Name() == kGridName) {
+                            playerDetached = false;
+                            break;
+                        }
+                    }
+                }
+            } catch (...) {
+                playerDetached = false;
+            }
+
+            if (playerDetached) {
+                mirror->playerGrid = nullptr;
+                mirror->playerColumn = -1;
+            }
+            if (callbackRevoked) {
+                mirror->trackedElement = nullptr;
+            }
+            workItem->cleaned = callbackRevoked && playerDetached;
+            if (workItem->cleaned) {
+                mirror->targetGrid = nullptr;
+            }
+        }, &work);
+
+        if (!dispatched || !work.cleaned) {
+            Wh_Log(L"RemoveMirrorPlayers: preserving unresolved mirror %p",
+                   instance->taskbarWindow);
+            survivors.push_back(std::move(instance));
+        }
     }
-    g_mirrorPlayers.clear();
+
+    g_mirrorPlayers = std::move(survivors);
+    return g_mirrorPlayers.empty();
 }
 
 static bool InjectPlayerGrid() {
@@ -8113,6 +10196,7 @@ static bool InjectPlayerGrid() {
             bool isTrackingPosition = (g_settings.position == L"taskbar_left_start" ||
                                        g_settings.position == L"taskbar_right_start" ||
                                        g_settings.position == L"taskbar_after_apps" ||
+                                       g_settings.position == L"taskbar_far_left_reserved" ||
                                        g_settings.position == L"taskbar_after_search_left" ||
                                        g_settings.position == L"taskbar_after_search_right" ||
                                        g_settings.position == L"taskbar_after_taskview_left" ||
@@ -8144,7 +10228,10 @@ static bool InjectPlayerGrid() {
                     std::wstring trackSide = L"right";
 
                     if (repeater) {
-                        if (g_settings.position == L"taskbar_after_apps") {
+                        if (g_settings.position == L"taskbar_far_left_reserved") {
+                            targetElem = repeater;
+                            trackSide = L"far_left";
+                        } else if (g_settings.position == L"taskbar_after_apps") {
                             targetElem = repeater;
                             trackSide = L"after_apps";
                         } else if (g_settings.position == L"taskbar_left_start") {
@@ -8193,9 +10280,12 @@ static bool InjectPlayerGrid() {
                             startButtonOffset = GetStartButtonAdjustment(root);
                         }
 
+                        auto weakTargetGrid = winrt::make_weak(targetGrid);
                         g_layoutUpdateToken = targetGrid.LayoutUpdated(
-                            [targetGrid, startButtonModActiveMod, startButtonOffset](winrt::Windows::Foundation::IInspectable const&, winrt::Windows::Foundation::IInspectable const&) {
+                            [weakTargetGrid, startButtonModActiveMod, startButtonOffset](winrt::Windows::Foundation::IInspectable const&, winrt::Windows::Foundation::IInspectable const&) {
                                 try {
+                                    auto targetGrid = weakTargetGrid.get();
+                                    if (!targetGrid) return;
                                     if (!g_playerGrid || !g_trackedElement || g_unloading) return;
                                     UpdateAnchorDebugOverlay(targetGrid, g_trackedElement);
 
@@ -8231,6 +10321,13 @@ static bool InjectPlayerGrid() {
                                         }
                                     } else if (g_trackPosition == L"left") {
                                         if (std::abs(currentMargin.Left - desiredGap) > 1.0) { m.Left = desiredGap; changedMargin = true; }
+                                    } else if (
+                                        g_trackPosition == L"after_apps" &&
+                                        IsWindowsTaskbarCentered()) {
+                                        if (std::abs(currentMargin.Left - m.Left) > 1.0 ||
+                                            std::abs(currentMargin.Right - m.Right) > 1.0) {
+                                            changedMargin = true;
+                                        }
                                     } else {
                                         if (std::abs(currentMargin.Right - desiredGap) > 1.0) { m.Right = desiredGap; changedMargin = true; }
                                     }
@@ -8257,6 +10354,19 @@ static bool InjectPlayerGrid() {
                                                     ? appEdge + g_settings.playerMarginLeft
                                                     : point.X + g_trackedElement.ActualWidth() +
                                                         g_settings.playerMarginLeft;
+                                                if (IsWindowsTaskbarCentered()) {
+                                                    double trayLeft =
+                                                        FindSystemTrayLeftEdge(
+                                                            targetGrid,
+                                                            targetGrid);
+                                                    if (trayLeft >= 0.0 &&
+                                                        leftPos + w +
+                                                                g_settings.playerMarginRight >
+                                                            trayLeft - 4.0) {
+                                                        leftPos =
+                                                            g_settings.playerMarginLeft;
+                                                    }
+                                                }
                                             } else {
                                                 leftPos = point.X + g_trackedElement.ActualWidth() + g_settings.playerMarginLeft;
                                             }
@@ -8336,23 +10446,18 @@ static bool InjectPlayerGrid() {
         if (g_playerGrid.ActualWidth() == 0.0 && g_playerGrid.ActualHeight() == 0.0) {
             Wh_Log(L"InjectPlayerGrid: XAML not laid out yet, scheduling deferred update");
             g_needsUiUpdate = true;
-            if (g_timerUpdateEvent) SetEvent(g_timerUpdateEvent);
+            SignalWorkerEventHandle(g_timerUpdateEvent);
         }
 
-        auto dispatcher = g_playerGrid.Dispatcher();
-        if (dispatcher) {
-            try {
-                dispatcher.RunAsync(winrt::Windows::UI::Core::CoreDispatcherPriority::Low, [=]() {
-                    if (!g_unloading && g_playerGrid) RefreshThemeColors();
-                });
-            } catch (...) {
-                Wh_Log(L"InjectPlayerGrid: Failed to dispatch RefreshThemeColors");
-            }
+        try {
+            if (!g_unloading && g_playerGrid) RefreshThemeColors();
+        } catch (...) {
+            Wh_Log(L"InjectPlayerGrid: Failed to refresh theme colors");
         }
 
         Canvas::SetZIndex(g_playerGrid, 1000);
 
-        OnSessionsChanged();
+        RequestMediaSessionRefresh();
         g_needsUiUpdate = true;
         return true;
     } catch (...) {
@@ -8391,25 +10496,17 @@ static void RemovePlayerGrid() {
         g_trackPosition = L"";
 
         auto targetGrid = g_injectionParent.try_as<Grid>();
-        int playerCol = -1;
+        // The configured position may already have changed by the time this
+        // cleanup runs. g_playerColumn records whether this exact injection
+        // inserted a real Grid column; the removed child's current column and
+        // the new setting aren't authoritative.
+        const int playerCol = g_playerColumn;
 
         RemoveAnchorDebugOverlays(targetGrid);
-        playerCol = RemovePlayerGridChildren(targetGrid);
+        RemovePlayerGridChildren(targetGrid);
 
-        bool isTrackingPosition = (g_settings.position == L"taskbar_left_edge" ||
-                                  g_settings.position == L"taskbar_center_edge" ||
-                                  g_settings.position == L"taskbar_right_edge" ||
-                                  g_settings.position == L"taskbar_left_start" ||
-                                  g_settings.position == L"taskbar_right_start" ||
-                                  g_settings.position == L"taskbar_after_apps" ||
-                                  g_settings.position == L"taskbar_after_search_left" ||
-                                  g_settings.position == L"taskbar_after_search_right" ||
-                                  g_settings.position == L"taskbar_after_taskview_left" ||
-                                  g_settings.position == L"taskbar_after_taskview_right" ||
-                                  g_settings.position == L"taskbar_after_widgets_left" ||
-                                  g_settings.position == L"taskbar_after_widgets_right");
-
-        if (!isTrackingPosition && playerCol >= 0 && playerCol < (int)targetGrid.ColumnDefinitions().Size()) {
+        if (targetGrid && playerCol >= 0 &&
+            playerCol < (int)targetGrid.ColumnDefinitions().Size()) {
             for (uint32_t i = 0; i < targetGrid.Children().Size(); ++i) {
                 auto child = targetGrid.Children().GetAt(i).try_as<FrameworkElement>();
                 if (child) {
@@ -8455,25 +10552,18 @@ static void RemovePlayerGrid() {
     }
 }
 
-static void RefreshPlayerContents() {
-    if (!g_refreshingMirrorPlayers && !g_mirrorPlayers.empty()) {
-        g_refreshingMirrorPlayers = true;
-        Grid originalGrid = g_playerGrid;
-        RefreshPlayerContents();
-        for (const auto& instance : g_mirrorPlayers) {
-            if (!instance || !instance->playerGrid) continue;
-            g_playerGrid = instance->playerGrid;
-            RefreshPlayerContents();
-        }
-        g_playerGrid = originalGrid;
-        g_refreshingMirrorPlayers = false;
+static void RefreshPlayerContentsForGrid(
+    Grid const& playerGrid,
+    std::shared_ptr<PlayerVisualState> const& visualState,
+    bool forceVisualRefresh) {
+    if (!playerGrid || !visualState || g_unloading || g_applyingSettings) {
         return;
     }
-    if (!g_playerGrid || g_unloading || g_applyingSettings) return;
 
     Wh_Log(L"RefreshPlayerContents: Starting");
     std::wstring      title, artist;
-    bool              isPlaying = false, hasMedia = false;
+    bool              isPlaying = false, playbackStateKnown = false;
+    bool              hasMedia = false;
     std::vector<BYTE> thumbBytes;
     std::vector<BYTE> appIconBytes;
     uint64_t          thumbHash = 0;
@@ -8484,6 +10574,7 @@ static void RefreshPlayerContents() {
         title        = g_media.title;
         artist       = g_media.artist;
         isPlaying    = g_media.isPlaying;
+        playbackStateKnown = g_media.playbackStateKnown;
         hasMedia     = g_media.hasMedia;
         thumbBytes   = g_media.thumbnailBytes;
         thumbHash    = g_media.thumbnailHash;
@@ -8496,34 +10587,41 @@ static void RefreshPlayerContents() {
     }
     Wh_Log(L"RefreshPlayerContents: title='%s', artist='%s', isPlaying=%d, hasMedia=%d",
            title.c_str(), artist.c_str(), isPlaying, hasMedia);
-    (void)hasMedia;
     bool hasSession = false;
     { std::lock_guard<std::mutex> lk(g_sessionMtx); hasSession = (g_currentSession != nullptr); }
 
-    g_playerGrid.UpdateLayout();
+    playerGrid.UpdateLayout();
 
-    if (title != g_scrollCachedTitle || artist != g_scrollCachedArtist) {
-        g_scrollCachedTitle  = title;
-        g_scrollCachedArtist = artist;
-        ResetScrollState(g_titleScroll);
-        ResetScrollState(g_artistScroll);
+    if (g_scrollResetRequested.exchange(false)) {
+        ResetScrollState(visualState->titleScroll);
+        ResetScrollState(visualState->artistScroll);
+        visualState->scrollCachedTitle.clear();
+        visualState->scrollCachedArtist.clear();
+    }
+
+    if (title != visualState->scrollCachedTitle ||
+        artist != visualState->scrollCachedArtist) {
+        visualState->scrollCachedTitle = title;
+        visualState->scrollCachedArtist = artist;
+        ResetScrollState(visualState->titleScroll);
+        ResetScrollState(visualState->artistScroll);
         try {
-            if (auto fe = FindChildByName(g_playerGrid, kTitleCloneName))
+            if (auto fe = FindChildByName(playerGrid, kTitleCloneName))
                 if (auto cl = fe.try_as<TextBlock>())
                     cl.Visibility(Visibility::Collapsed);
         } catch (...) {}
         try {
-            if (auto fe = FindChildByName(g_playerGrid, kArtistCloneName))
+            if (auto fe = FindChildByName(playerGrid, kArtistCloneName))
                 if (auto cl = fe.try_as<TextBlock>())
                     cl.Visibility(Visibility::Collapsed);
         } catch (...) {}
         try {
-            if (auto fe = FindChildByName(g_playerGrid, kTitleBlockName))
+            if (auto fe = FindChildByName(playerGrid, kTitleBlockName))
                 if (auto tb = fe.try_as<TextBlock>())
                     Canvas::SetLeft(tb, 0.0);
         } catch (...) {}
         try {
-            if (auto fe = FindChildByName(g_playerGrid, kArtistBlockName))
+            if (auto fe = FindChildByName(playerGrid, kArtistBlockName))
                 if (auto ab = fe.try_as<TextBlock>())
                     Canvas::SetLeft(ab, 0.0);
         } catch (...) {}
@@ -8532,12 +10630,14 @@ static void RefreshPlayerContents() {
     bool titleVisible = false;
     bool artistVisible = false;
 
-    if (auto fe = FindChildByName(g_playerGrid, kTitleBlockName))
+    if (auto fe = FindChildByName(playerGrid, kTitleBlockName))
         if (auto tb = fe.try_as<TextBlock>())
             try {
                 std::wstring displayTitle = title;
                 if (!hasSession) {
                     displayTitle = g_settings.noMediaTitleText;
+                } else if (!hasMedia) {
+                    displayTitle.clear();
                 } else if (title.empty()) {
                     displayTitle = g_settings.emptyTitleText;
                 }
@@ -8556,15 +10656,15 @@ static void RefreshPlayerContents() {
 
                 if (g_settings.enableTitleScrolling && visible) {
                     try {
-                        if (auto viewFe = FindChildByName(g_playerGrid, kTitleScrollViewName))
+                        if (auto viewFe = FindChildByName(playerGrid, kTitleScrollViewName))
                             viewFe.Visibility(Visibility::Visible);
                     } catch (...) {}
-                    if (auto panelFe = FindChildByName(g_playerGrid, kPanelGridName)) {
+                    if (auto panelFe = FindChildByName(playerGrid, kPanelGridName)) {
                         panelFe.UpdateLayout();
                     }
                     tb.UpdateLayout();
                     double textW = tb.DesiredSize().Width;
-                    if (auto viewFe = FindChildByName(g_playerGrid, kTitleScrollViewName)) {
+                    if (auto viewFe = FindChildByName(playerGrid, kTitleScrollViewName)) {
                         if (auto viewCanvas = viewFe.try_as<Canvas>()) {
                             double minW = (double)g_settings.textAreaMinWidth;
                             double maxW = (double)g_settings.textAreaMaxWidth;
@@ -8572,7 +10672,7 @@ static void RefreshPlayerContents() {
 
                             if (maxW > 0 && viewW > maxW) viewW = maxW;
 
-                            double availW = GetAvailableScrollTextAreaWidth();
+                            double availW = GetAvailableScrollTextAreaWidth(playerGrid);
                             if (availW > 0.0 && viewW > availW) {
                                 viewW = (minW > 0.0) ? std::max(availW, minW) : availW;
                             }
@@ -8587,21 +10687,23 @@ static void RefreshPlayerContents() {
                                     }
                                 } catch (...) {}
                             }
-                            bool wasActive = g_titleScroll.active;
-                            g_titleScroll.textWidth = textW;
-                            g_titleScroll.viewWidth = viewW;
-                            g_titleScroll.active = (textW > viewW + 2.0);
-                            if (!g_titleScroll.active) {
-                                g_titleScroll.offset = 0.0;
-                                g_titleScroll.forward = true;
+                            auto& scroll = visualState->titleScroll;
+                            bool wasActive = scroll.active;
+                            scroll.textWidth = textW;
+                            scroll.viewWidth = viewW;
+                            scroll.active = (textW > viewW + 2.0);
+                            if (!scroll.active) {
+                                scroll.offset = 0.0;
+                                scroll.forward = true;
                                 Canvas::SetLeft(tb, 0.0);
                             } else if (!wasActive) {
-                                g_titleScroll.offset = 0.0;
-                                g_titleScroll.forward = true;
-                                g_titleScroll.pausing  = true;
-                                g_titleScroll.pauseTick = g_settings.scrollPauseDuration;
+                                scroll.offset = 0.0;
+                                scroll.forward = true;
+                                scroll.pausing = true;
+                                scroll.pauseTick =
+                                    g_settings.scrollPauseDuration;
                             }
-                            if (auto cloneFe = FindChildByName(g_playerGrid, kTitleCloneName)) {
+                            if (auto cloneFe = FindChildByName(playerGrid, kTitleCloneName)) {
                                 if (auto clone = cloneFe.try_as<TextBlock>()) {
                                     clone.Text(tb.Text());
                                     clone.Foreground(tb.Foreground());
@@ -8611,23 +10713,25 @@ static void RefreshPlayerContents() {
                         }
                     }
                 } else {
-                    g_titleScroll.active = false;
-                    g_titleScroll.offset = 0.0;
+                    visualState->titleScroll.active = false;
+                    visualState->titleScroll.offset = 0.0;
                     if (g_settings.enableTitleScrolling) {
                         try {
-                            if (auto viewFe = FindChildByName(g_playerGrid, kTitleScrollViewName))
+                            if (auto viewFe = FindChildByName(playerGrid, kTitleScrollViewName))
                                 viewFe.Visibility(Visibility::Collapsed);
                         } catch (...) {}
                     }
                 }
             } catch (...) {}
 
-    if (auto fe = FindChildByName(g_playerGrid, kArtistBlockName))
+    if (auto fe = FindChildByName(playerGrid, kArtistBlockName))
         if (auto ab = fe.try_as<TextBlock>())
             try {
                 std::wstring displayArtist = artist;
                 if (!hasSession) {
                     displayArtist = g_settings.noMediaArtistText;
+                } else if (!hasMedia) {
+                    displayArtist.clear();
                 } else if (artist.empty()) {
                     displayArtist = g_settings.emptyArtistText;
                 }
@@ -8646,15 +10750,15 @@ static void RefreshPlayerContents() {
 
                 if (g_settings.enableArtistScrolling && visible) {
                     try {
-                        if (auto viewFe = FindChildByName(g_playerGrid, kArtistScrollViewName))
+                        if (auto viewFe = FindChildByName(playerGrid, kArtistScrollViewName))
                             viewFe.Visibility(Visibility::Visible);
                     } catch (...) {}
-                    if (auto panelFe = FindChildByName(g_playerGrid, kPanelGridName)) {
+                    if (auto panelFe = FindChildByName(playerGrid, kPanelGridName)) {
                         panelFe.UpdateLayout();
                     }
                     ab.UpdateLayout();
                     double textW = ab.DesiredSize().Width;
-                    if (auto viewFe = FindChildByName(g_playerGrid, kArtistScrollViewName)) {
+                    if (auto viewFe = FindChildByName(playerGrid, kArtistScrollViewName)) {
                         if (auto viewCanvas = viewFe.try_as<Canvas>()) {
                             double minW = (double)g_settings.textAreaMinWidth;
                             double maxW = (double)g_settings.textAreaMaxWidth;
@@ -8662,7 +10766,7 @@ static void RefreshPlayerContents() {
 
                             if (maxW > 0 && viewW > maxW) viewW = maxW;
 
-                            double availW = GetAvailableScrollTextAreaWidth();
+                            double availW = GetAvailableScrollTextAreaWidth(playerGrid);
                             if (availW > 0.0 && viewW > availW) {
                                 viewW = (minW > 0.0) ? std::max(availW, minW) : availW;
                             }
@@ -8677,21 +10781,23 @@ static void RefreshPlayerContents() {
                                     }
                                 } catch (...) {}
                             }
-                            bool wasActive = g_artistScroll.active;
-                            g_artistScroll.textWidth = textW;
-                            g_artistScroll.viewWidth = viewW;
-                            g_artistScroll.active = (textW > viewW + 2.0);
-                            if (!g_artistScroll.active) {
-                                g_artistScroll.offset = 0.0;
-                                g_artistScroll.forward = true;
+                            auto& scroll = visualState->artistScroll;
+                            bool wasActive = scroll.active;
+                            scroll.textWidth = textW;
+                            scroll.viewWidth = viewW;
+                            scroll.active = (textW > viewW + 2.0);
+                            if (!scroll.active) {
+                                scroll.offset = 0.0;
+                                scroll.forward = true;
                                 Canvas::SetLeft(ab, 0.0);
                             } else if (!wasActive) {
-                                g_artistScroll.offset = 0.0;
-                                g_artistScroll.forward = true;
-                                g_artistScroll.pausing  = true;
-                                g_artistScroll.pauseTick = g_settings.scrollPauseDuration;
+                                scroll.offset = 0.0;
+                                scroll.forward = true;
+                                scroll.pausing = true;
+                                scroll.pauseTick =
+                                    g_settings.scrollPauseDuration;
                             }
-                            if (auto cloneFe = FindChildByName(g_playerGrid, kArtistCloneName)) {
+                            if (auto cloneFe = FindChildByName(playerGrid, kArtistCloneName)) {
                                 if (auto clone = cloneFe.try_as<TextBlock>()) {
                                     clone.Text(ab.Text());
                                     clone.Foreground(ab.Foreground());
@@ -8701,11 +10807,11 @@ static void RefreshPlayerContents() {
                         }
                     }
                 } else {
-                    g_artistScroll.active = false;
-                    g_artistScroll.offset = 0.0;
+                    visualState->artistScroll.active = false;
+                    visualState->artistScroll.offset = 0.0;
                     if (g_settings.enableArtistScrolling) {
                         try {
-                            if (auto viewFe = FindChildByName(g_playerGrid, kArtistScrollViewName))
+                            if (auto viewFe = FindChildByName(playerGrid, kArtistScrollViewName))
                                 viewFe.Visibility(Visibility::Collapsed);
                         } catch (...) {}
                     }
@@ -8713,23 +10819,25 @@ static void RefreshPlayerContents() {
             } catch (...) {}
 
     try {
-        if (auto stackFe = FindChildByName(g_playerGrid, kTextStackName)) {
+        if (auto stackFe = FindChildByName(playerGrid, kTextStackName)) {
             bool anyTextVisible = titleVisible || artistVisible;
             stackFe.Visibility(anyTextVisible ? Visibility::Visible : Visibility::Collapsed);
         }
     } catch (...) {}
 
-    if (auto fe = FindChildByName(g_playerGrid, kPlayBtnName))
+    if (auto fe = FindChildByName(playerGrid, kPlayBtnName))
         if (auto btn = fe.try_as<Button>())
             try {
+                btn.IsEnabled(playbackStateKnown);
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
                     const wchar_t* glyph = GetGlyph(2, isPlaying);
                     ct.Text(winrt::hstring(glyph));
                     ct.Foreground(MakeBrush(ButtonColor()));
+                    ct.Opacity(playbackStateKnown ? 1.0 : 0.35);
                 }
             } catch (...) {}
 
-    if (auto fe = FindChildByName(g_playerGrid, kPrevBtnName))
+    if (auto fe = FindChildByName(playerGrid, kPrevBtnName))
         if (auto btn = fe.try_as<Button>())
             try {
                 bool supported = canSkipPrevious;
@@ -8752,7 +10860,7 @@ static void RefreshPlayerContents() {
                 }
             } catch (...) {}
 
-    if (auto fe = FindChildByName(g_playerGrid, kNextBtnName))
+    if (auto fe = FindChildByName(playerGrid, kNextBtnName))
         if (auto btn = fe.try_as<Button>())
             try {
                 bool supported = canSkipNext;
@@ -8770,7 +10878,7 @@ static void RefreshPlayerContents() {
                 }
             } catch (...) {}
 
-    if (auto fe = FindChildByName(g_playerGrid, kVolumeBtnName))
+    if (auto fe = FindChildByName(playerGrid, kVolumeBtnName))
         if (auto btn = fe.try_as<Button>())
             try {
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
@@ -8783,7 +10891,7 @@ static void RefreshPlayerContents() {
                 }
             } catch (...) {}
 
-    if (auto fe = FindChildByName(g_playerGrid, kRewindBtnName))
+    if (auto fe = FindChildByName(playerGrid, kRewindBtnName))
         if (auto btn = fe.try_as<Button>())
             try {
                 bool supported = canSeek;
@@ -8801,7 +10909,7 @@ static void RefreshPlayerContents() {
                 }
             } catch (...) {}
 
-    if (auto fe = FindChildByName(g_playerGrid, kForwardBtnName))
+    if (auto fe = FindChildByName(playerGrid, kForwardBtnName))
         if (auto btn = fe.try_as<Button>())
             try {
                 bool supported = canSeek;
@@ -8819,7 +10927,7 @@ static void RefreshPlayerContents() {
                 }
             } catch (...) {}
 
-    if (auto fe = FindChildByName(g_playerGrid, kShuffleBtnName))
+    if (auto fe = FindChildByName(playerGrid, kShuffleBtnName))
         if (auto btn = fe.try_as<Button>())
             try {
                 bool supported = canShuffle;
@@ -8842,7 +10950,7 @@ static void RefreshPlayerContents() {
                 }
             } catch (...) {}
 
-    if (auto fe = FindChildByName(g_playerGrid, kRepeatBtnName))
+    if (auto fe = FindChildByName(playerGrid, kRepeatBtnName))
         if (auto btn = fe.try_as<Button>())
             try {
                 bool supported = canRepeat;
@@ -8876,27 +10984,12 @@ static void RefreshPlayerContents() {
                 }
             } catch (...) {}
 
-    if (auto fe = FindChildByName(g_playerGrid, kSwitchSessionsBtnName))
-        if (auto btn = fe.try_as<Button>())
-            try {
-                bool supported = g_sessionCount.load() > 1;
-                btn.IsEnabled(supported);
-                if (g_settings.hideUnsupportedButtons) {
-                    btn.Visibility(supported ? Visibility::Visible : Visibility::Collapsed);
-                } else {
-                    btn.Visibility(Visibility::Visible);
-                }
-                if (auto ct = btn.Content().try_as<TextBlock>()) {
-                    ct.Opacity(supported ? 1.0 : 0.35);
-                    ct.Foreground(MakeBrush(ButtonColor()));
-                }
-            } catch (...) {}
-
     if (g_settings.showPauseOverlay && g_settings.showAlbumArt) {
-        if (auto fe = FindChildByName(g_playerGrid, L"PauseIconOverlay"))
+        if (auto fe = FindChildByName(playerGrid, L"PauseIconOverlay"))
             if (auto overlay = fe.try_as<Border>()) {
                 try {
-                    bool showPause = !isPlaying;
+                    bool showPause =
+                        hasMedia && playbackStateKnown && !isPlaying;
                     overlay.Visibility(showPause ? Visibility::Visible : Visibility::Collapsed);
 
                     if (auto pauseIcon = overlay.Child().try_as<TextBlock>()) {
@@ -8907,7 +11000,7 @@ static void RefreshPlayerContents() {
                     }
 
                     if (showPause) {
-                        if (auto artImg = FindChildByName(g_playerGrid, kArtImageName)) {
+                        if (auto artImg = FindChildByName(playerGrid, kArtImageName)) {
                             if (auto parent = VisualTreeHelper::GetParent(artImg)) {
                                 if (auto artInnerGrid = parent.try_as<Grid>()) {
                                     for (uint32_t i = 0; i < artInnerGrid.Children().Size(); ++i) {
@@ -8929,14 +11022,16 @@ static void RefreshPlayerContents() {
 
     bool paletteChanged = false;
 
-    if (auto fe = FindChildByName(g_playerGrid, kArtImageName))
+    if (auto fe = FindChildByName(playerGrid, kArtImageName))
         if (auto img = fe.try_as<Controls::Image>()) {
             if (!thumbBytes.empty() && g_settings.showAlbumArt) {
-                bool isSameAlbum = (img.Source() &&
-                                   !g_cachedThumbnailBytes.empty() &&
-                                   title == g_cachedAlbumTitle &&
-                                   artist == g_cachedAlbumArtist &&
-                                   thumbBytes == g_cachedThumbnailBytes);
+                bool isSameAlbum = (!forceVisualRefresh &&
+                                   img.Source() &&
+                                   !visualState->cachedThumbnailBytes.empty() &&
+                                   title == visualState->cachedAlbumTitle &&
+                                   artist == visualState->cachedAlbumArtist &&
+                                   thumbBytes ==
+                                       visualState->cachedThumbnailBytes);
 
                 size_t newHash = (size_t)thumbHash;
                 if (newHash != g_cachedPaletteHash && newHash != 0) {
@@ -8972,26 +11067,23 @@ static void RefreshPlayerContents() {
                                     if (g_settings.albumArtMaxHeight > 0) {
                                         bmp.DecodePixelHeight(g_settings.albumArtMaxHeight);
                                     }
+                                } else {
+                                    int baseHeight =
+                                        g_settings.albumArtMaxHeight > 0
+                                            ? g_settings.albumArtMaxHeight
+                                            : 64;
+                                    bmp.DecodePixelHeight(std::clamp(
+                                        baseHeight * 2, 32, 512));
                                 }
-
-                                bmp.ImageOpened([](auto const&, auto const&) {
-                                    if (g_unloading || g_applyingSettings || !g_playerGrid) return;
-                                    try {
-                                        if (auto panelFe = FindChildByName(g_playerGrid, kPanelGridName)) {
-                                            panelFe.UpdateLayout();
-                                        }
-                                        g_needsUiUpdate = true;
-                                        if (g_timerUpdateEvent) SetEvent(g_timerUpdateEvent);
-                                    } catch (...) {}
-                                });
 
                                 img.Source(bmp);
                                 bmp.SetSourceAsync(rasStream);
                                 img.Visibility(Visibility::Visible);
 
-                                g_cachedAlbumTitle = title;
-                                g_cachedAlbumArtist = artist;
-                                g_cachedThumbnailBytes = thumbBytes;
+                                visualState->cachedAlbumTitle = title;
+                                visualState->cachedAlbumArtist = artist;
+                                visualState->cachedThumbnailBytes =
+                                    thumbBytes;
 
                                 if (auto parent = VisualTreeHelper::GetParent(img)) {
                                     if (auto artInnerGrid = parent.try_as<Grid>()) {
@@ -9033,22 +11125,39 @@ static void RefreshPlayerContents() {
                     }
                 }
 
-                if (auto bgFe = FindChildByName(g_playerGrid, L"FluentMedia_Background")) {
+                if (auto bgFe = FindChildByName(playerGrid, L"FluentMedia_Background")) {
                     if (auto bgBorder = bgFe.try_as<Border>()) {
                         auto& bgType = g_settings.backgroundType;
 
                         if (bgType == L"album_art_blur") {
                             try {
-                                g_blurBgCache.Invalidate();
+                                visualState->blurBgCache.Invalidate();
                                 bgBorder.Visibility(Visibility::Visible);
                                 bgBorder.Opacity(g_settings.blurOpacity / 100.0);
-                                auto applyBlur = [bgBorder, thumbBytesSnap = thumbBytes]() {
+                                auto weakBackground =
+                                    winrt::make_weak(bgBorder);
+                                std::weak_ptr<PlayerVisualState>
+                                    weakVisualState = visualState;
+                                auto applyBlur = [
+                                    weakBackground,
+                                    weakVisualState,
+                                    thumbBytesSnap = thumbBytes]() {
                                     try {
+                                        auto bgBorder =
+                                            weakBackground.get();
+                                        auto visualState =
+                                            weakVisualState.lock();
+                                        if (!bgBorder || !visualState) {
+                                            return;
+                                        }
                                         int w = (int)bgBorder.ActualWidth();
                                         int h = (int)bgBorder.ActualHeight();
                                         if (w <= 0 || h <= 0) return;
-                                        g_blurBgCache.Invalidate();
-                                        bgBorder.Background(MakeAlbumBlurBrush(thumbBytesSnap, w, h));
+                                        visualState->blurBgCache.Invalidate();
+                                        bgBorder.Background(
+                                            MakeAlbumBlurBrush(
+                                                visualState->blurBgCache,
+                                                thumbBytesSnap, w, h));
                                         bgBorder.Opacity(g_settings.blurOpacity / 100.0);
                                         bgBorder.Visibility(Visibility::Visible);
                                     } catch (...) {}
@@ -9058,9 +11167,15 @@ static void RefreshPlayerContents() {
                                 } else {
                                     auto tokenHolder = std::make_shared<winrt::event_token>();
                                     *tokenHolder = bgBorder.SizeChanged(
-                                        [applyBlur, bgBorder, tokenHolder](auto const&, auto const&) mutable {
+                                        [applyBlur, weakBackground, tokenHolder](auto const&, auto const&) mutable {
                                             applyBlur();
-                                            try { bgBorder.SizeChanged(*tokenHolder); } catch (...) {}
+                                            try {
+                                                if (auto bgBorder =
+                                                        weakBackground.get()) {
+                                                    bgBorder.SizeChanged(
+                                                        *tokenHolder);
+                                                }
+                                            } catch (...) {}
                                         });
                                 }
                             } catch (...) {}
@@ -9074,13 +11189,13 @@ static void RefreshPlayerContents() {
                     }
                 }
             } else {
-                g_cachedAlbumTitle.clear();
-                g_cachedAlbumArtist.clear();
-                g_cachedThumbnailBytes.clear();
+                visualState->cachedAlbumTitle.clear();
+                visualState->cachedAlbumArtist.clear();
+                visualState->cachedThumbnailBytes.clear();
                 g_cachedPaletteHash = 0;
-                g_blurBgCache.Invalidate();
+                visualState->blurBgCache.Invalidate();
 
-                if (auto bgFe = FindChildByName(g_playerGrid, L"FluentMedia_Background")) {
+                if (auto bgFe = FindChildByName(playerGrid, L"FluentMedia_Background")) {
                     if (auto bgBorder = bgFe.try_as<Border>()) {
                         try {
                             auto& bgType = g_settings.backgroundType;
@@ -9194,7 +11309,7 @@ static void RefreshPlayerContents() {
                 g_settings.backgroundType == L"acrylic" ||
                 g_settings.backgroundType == L"mica" ||
                 g_settings.backgroundType == L"mica_alt") {
-                if (auto bgFe = FindChildByName(g_playerGrid, L"FluentMedia_Background")) {
+                if (auto bgFe = FindChildByName(playerGrid, L"FluentMedia_Background")) {
                     if (auto bgBorder = bgFe.try_as<Border>()) {
                         bgBorder.Background(MakeBackgroundBrush());
                     }
@@ -9204,22 +11319,23 @@ static void RefreshPlayerContents() {
             auto textClr = TextColor();
             auto artistClr = ArtistColor();
 
-            if (auto titleFe = FindChildByName(g_playerGrid, kTitleBlockName)) {
+            if (auto titleFe = FindChildByName(playerGrid, kTitleBlockName)) {
                 if (auto titleBlock = titleFe.try_as<TextBlock>()) {
                     titleBlock.Foreground(SolidColorBrush(textClr));
                 }
             }
 
-            if (auto artistFe = FindChildByName(g_playerGrid, kArtistBlockName)) {
+            if (auto artistFe = FindChildByName(playerGrid, kArtistBlockName)) {
                 if (auto artistBlock = artistFe.try_as<TextBlock>()) {
                     artistBlock.Foreground(SolidColorBrush(artistClr));
                 }
             }
 
             auto buttonClr = ButtonColor();
-            for (const auto& btnName : {kPlayBtnName, kPrevBtnName, kNextBtnName, kStopBtnName, kVolumeBtnName,
+            for (const auto& btnName : {kPlayBtnName, kPrevBtnName,
+                                        kNextBtnName, kVolumeBtnName,
                                         kRewindBtnName, kForwardBtnName, kShuffleBtnName, kRepeatBtnName}) {
-                if (auto btnFe = FindChildByName(g_playerGrid, btnName)) {
+                if (auto btnFe = FindChildByName(playerGrid, btnName)) {
                     if (auto btn = btnFe.try_as<Button>()) {
                         if (auto content = btn.Content()) {
                             if (auto icon = content.try_as<TextBlock>()) {
@@ -9233,7 +11349,7 @@ static void RefreshPlayerContents() {
     }
 
     if (g_settings.showAppIcon) {
-        if (auto fe = FindChildByName(g_playerGrid, kAppIconImageName))
+        if (auto fe = FindChildByName(playerGrid, kAppIconImageName))
             if (auto img = fe.try_as<Controls::Image>()) {
                 bool sizeChanged = (g_cachedAppIconSize != g_settings.appIconSize);
                 if (sizeChanged && !appIconBytes.empty()) {
@@ -9295,181 +11411,161 @@ static void RefreshPlayerContents() {
     }
 }
 
-static bool IsFullscreenActive() {
-    using Fn = HRESULT(WINAPI*)(int*);
-    static Fn pfn = nullptr; static bool tried = false;
-    if (!tried) {
-        tried = true;
-        HMODULE h = GetModuleHandleW(L"shell32.dll");
-        if (!h) h = LoadLibraryW(L"shell32.dll");
-        if (h) pfn = (Fn)GetProcAddress(h, (LPCSTR)2573);
+static void RefreshPlayerContents() {
+    Grid primaryGrid = g_playerGrid;
+    if (primaryGrid) {
+        RefreshPlayerContentsForGrid(
+            primaryGrid, g_primaryVisualState, false);
     }
-    if (!pfn) return false;
-    int s = 0;
-    return SUCCEEDED(pfn(&s)) && (s == 2 || s == 3 || s == 4);
+
+    auto mirrors = g_mirrorPlayers;
+    for (const auto& instance : mirrors) {
+        if (!instance || !instance->playerGrid || !instance->visualState) {
+            continue;
+        }
+        struct MirrorRefreshWork {
+            std::shared_ptr<MirrorPlayerInstance> instance;
+        } work{instance};
+        RunFromWindowThread(instance->taskbarWindow, [](void* parameter) {
+            auto* workItem = static_cast<MirrorRefreshWork*>(parameter);
+            auto const& mirror = workItem->instance;
+            RefreshPlayerContentsForGrid(
+                mirror->playerGrid, mirror->visualState, false);
+        }, &work);
+    }
 }
 
-static void UpdateVisibility() {
-    if (!g_updatingMirrorVisibility && !g_mirrorPlayers.empty()) {
-        g_updatingMirrorVisibility = true;
+static bool IsFullscreenActive() {
+    QUERY_USER_NOTIFICATION_STATE state = QUNS_NOT_PRESENT;
+    if (FAILED(SHQueryUserNotificationState(&state))) return false;
+    return state == QUNS_RUNNING_D3D_FULL_SCREEN ||
+           state == QUNS_PRESENTATION_MODE ||
+           state == QUNS_BUSY;
+}
 
-        Grid primaryGrid = g_playerGrid;
-        FrameworkElement primaryParent = g_injectionParent;
-        int primaryColumn = g_playerColumn;
-        HWND primaryTaskbar = g_taskbarWnd;
-
-        // Update the selected taskbar first. Mirror instances use immediate
-        // visibility changes so a delayed animation can't act on restored
-        // primary-instance globals.
-        UpdateVisibility();
-        bool smoothPositionAnimation = g_settings.enableSmoothPositionAnimation;
-        g_settings.enableSmoothPositionAnimation = false;
-        for (const auto& instance : g_mirrorPlayers) {
-            if (!instance || !instance->playerGrid) continue;
-            g_playerGrid = instance->playerGrid;
-            g_injectionParent = instance->targetGrid;
-            g_playerColumn = instance->playerColumn;
-            g_taskbarWnd = instance->taskbarWindow;
-            UpdateVisibility();
-        }
-        g_settings.enableSmoothPositionAnimation = smoothPositionAnimation;
-
-        g_playerGrid = primaryGrid;
-        g_injectionParent = primaryParent;
-        g_playerColumn = primaryColumn;
-        g_taskbarWnd = primaryTaskbar;
-        g_updatingMirrorVisibility = false;
-        return;
-    }
-
-    if (!g_playerGrid || g_unloading || g_applyingSettings) return;
-
+static bool ShouldHidePlayer() {
     bool hide = false;
     if (g_settings.hideFullscreen && IsFullscreenActive()) hide = true;
-
     if (!hide && g_hiddenByIdle) hide = true;
 
     if (!hide) {
         bool hasMedia = false, hasSession = false;
-        { std::lock_guard<std::mutex> lk(g_mediaMtx); hasMedia = g_media.hasMedia; }
-        { std::lock_guard<std::mutex> lk(g_sessionMtx); hasSession = (g_currentSession != nullptr); }
-        if (hasMedia || hasSession) {
+        {
+            std::lock_guard<std::mutex> lock(g_mediaMtx);
+            hasMedia = g_media.hasMedia;
+        }
+        {
+            std::lock_guard<std::mutex> lock(g_sessionMtx);
+            hasSession = g_currentSession != nullptr;
+        }
+        if (hasMedia) {
             g_lastMediaTime = std::chrono::steady_clock::now();
         }
 
         if (g_settings.hideWhenNoMedia) {
-
             if (!hasSession) {
                 hide = true;
-            }
-
-            else if (!hasMedia) {
+            } else if (!hasMedia) {
                 auto now = std::chrono::steady_clock::now();
-                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - g_lastMediaTime).count();
-
+                auto elapsed =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        now - g_lastMediaTime)
+                        .count();
                 if (elapsed > 2500) {
                     hide = true;
                 } else {
-                    // Recheck on the timer's normal 500 ms cadence. The old
-                    // implementation spawned a detached thread for every
-                    // check, which could create a short startup thread storm.
                     g_needsUiUpdate = true;
                 }
             }
         }
     }
+    return hide;
+}
 
+static void UpdateVisibilityForGrid(
+    Grid const& playerGrid,
+    FrameworkElement const& injectionParent,
+    int playerColumn,
+    bool hide) {
+    if (!playerGrid) return;
     try {
-        if (g_playerColumn == -1) {
-            if (hide) {
-                g_playerGrid.Visibility(Visibility::Collapsed);
-            } else {
-                g_playerGrid.Visibility(Visibility::Visible);
-            }
-        } else {
-            bool isTrackingPosition = (g_settings.position == L"taskbar_left_start" ||
-                                      g_settings.position == L"taskbar_right_start" ||
-                                      g_settings.position == L"taskbar_after_search_left" ||
-                                      g_settings.position == L"taskbar_after_search_right" ||
-                                      g_settings.position == L"taskbar_after_taskview_left" ||
-                                      g_settings.position == L"taskbar_after_taskview_right" ||
-                                      g_settings.position == L"taskbar_after_widgets_left" ||
-                                      g_settings.position == L"taskbar_after_widgets_right" ||
-                                      g_settings.position == L"taskbar_far_edge_left");
+        playerGrid.Visibility(
+            hide ? Visibility::Collapsed : Visibility::Visible);
+        playerGrid.Opacity(hide ? 0.0 : 1.0);
 
-            if (hide && isTrackingPosition && g_settings.enableSmoothPositionAnimation) {
-                g_playerGrid.Opacity(0.0);
+        if (playerColumn < 0) {
+            playerGrid.UpdateLayout();
+            return;
+        }
 
-                std::thread([]() {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-                    try {
-                        RunFromWindowThread(g_taskbarWnd, [](void* param) {
-                            try {
-                                if (g_playerGrid) {
-                                    g_playerGrid.Visibility(Visibility::Collapsed);
-
-                                    if (g_injectionParent) {
-                                        if (auto targetGrid = g_injectionParent.try_as<Grid>()) {
-                                            if (g_playerColumn < (int)targetGrid.ColumnDefinitions().Size()) {
-                                                auto colDef = targetGrid.ColumnDefinitions().GetAt(g_playerColumn);
-                                                colDef.Width({0.0, GridUnitType::Pixel});
-                                            }
-                                        }
-                                    }
-
-                                    g_playerGrid.MinWidth(0);
-                                    g_playerGrid.MaxWidth(0);
-                                    g_playerGrid.Width(0);
-                                }
-                            } catch (...) {}
-                        }, nullptr);
-                    } catch (...) {}
-                }).detach();
-            } else {
-                g_playerGrid.Visibility(hide ? Visibility::Collapsed : Visibility::Visible);
-                g_playerGrid.Opacity(hide ? 0.0 : 1.0);
-                Wh_Log(L"UpdateVisibility: Set Visibility=%d, Opacity=%f", hide ? 0 : 1, hide ? 0.0 : 1.0);
-
-                if (g_injectionParent) {
-                    if (auto targetGrid = g_injectionParent.try_as<Grid>()) {
-                        if (g_playerColumn < (int)targetGrid.ColumnDefinitions().Size()) {
-                            auto colDef = targetGrid.ColumnDefinitions().GetAt(g_playerColumn);
-                            if (hide) {
-                                colDef.Width({0.0, GridUnitType::Pixel});
-                                Wh_Log(L"UpdateVisibility: Set column width to 0");
-                            } else {
-                                colDef.Width({1.0, GridUnitType::Auto});
-                                Wh_Log(L"UpdateVisibility: Set column width to Auto");
-                            }
-                        }
-                    }
-                } else {
-                    Wh_Log(L"UpdateVisibility: g_injectionParent is NULL");
-                }
-
-                if (hide) {
-                    g_playerGrid.MinWidth(0);
-                    g_playerGrid.MaxWidth(0);
-                    g_playerGrid.Width(0);
-                } else {
-                    bool hasTextOrButtons = g_settings.showTrackTitle || g_settings.showTrackArtist || (g_settings.showMediaButtons && !g_mediaButtons.empty());
-                    if (hasTextOrButtons && g_settings.playerMinWidth > 0) {
-                        g_playerGrid.MinWidth((double)g_settings.playerMinWidth);
-                    } else {
-                        g_playerGrid.MinWidth(0);
-                    }
-                    if (g_settings.playerMaxWidth > 0) {
-                        g_playerGrid.MaxWidth((double)g_settings.playerMaxWidth);
-                    } else {
-                        g_playerGrid.ClearValue(FrameworkElement::MaxWidthProperty());
-                    }
-                    g_playerGrid.ClearValue(FrameworkElement::WidthProperty());
-                }
+        if (auto targetGrid = injectionParent.try_as<Grid>()) {
+            if (playerColumn <
+                static_cast<int>(targetGrid.ColumnDefinitions().Size())) {
+                auto column =
+                    targetGrid.ColumnDefinitions().GetAt(playerColumn);
+                column.Width(hide
+                                 ? GridLength{0.0, GridUnitType::Pixel}
+                                 : GridLength{1.0, GridUnitType::Auto});
             }
         }
 
-        g_playerGrid.UpdateLayout();
+        if (hide) {
+            playerGrid.MinWidth(0);
+            playerGrid.MaxWidth(0);
+            playerGrid.Width(0);
+        } else {
+            bool hasTextOrButtons =
+                g_settings.showTrackTitle ||
+                g_settings.showTrackArtist ||
+                (g_settings.showMediaButtons &&
+                 !g_mediaButtons.empty());
+            if (hasTextOrButtons && g_settings.playerMinWidth > 0) {
+                playerGrid.MinWidth(
+                    static_cast<double>(g_settings.playerMinWidth));
+            } else {
+                playerGrid.MinWidth(0);
+            }
+            if (g_settings.playerMaxWidth > 0) {
+                playerGrid.MaxWidth(
+                    static_cast<double>(g_settings.playerMaxWidth));
+            } else {
+                playerGrid.ClearValue(
+                    FrameworkElement::MaxWidthProperty());
+            }
+            playerGrid.ClearValue(FrameworkElement::WidthProperty());
+        }
+
+        playerGrid.UpdateLayout();
     } catch (...) {}
+}
+
+static void UpdateVisibility() {
+    if (g_unloading || g_applyingSettings) return;
+    bool hide = ShouldHidePlayer();
+
+    Grid primaryGrid = g_playerGrid;
+    FrameworkElement primaryParent = g_injectionParent;
+    if (primaryGrid) {
+        UpdateVisibilityForGrid(
+            primaryGrid, primaryParent, g_playerColumn, hide);
+    }
+
+    auto mirrors = g_mirrorPlayers;
+    for (const auto& instance : mirrors) {
+        if (!instance || !instance->playerGrid) continue;
+        struct MirrorVisibilityWork {
+            std::shared_ptr<MirrorPlayerInstance> instance;
+            bool hide;
+        } work{instance, hide};
+        RunFromWindowThread(instance->taskbarWindow, [](void* parameter) {
+            auto* workItem =
+                static_cast<MirrorVisibilityWork*>(parameter);
+            auto const& mirror = workItem->instance;
+            UpdateVisibilityForGrid(
+                mirror->playerGrid, mirror->targetGrid,
+                mirror->playerColumn, workItem->hide);
+        }, &work);
+    }
 }
 
 static void ApplySettings() {
@@ -9487,50 +11583,16 @@ static void ApplySettings() {
 }
 
 
-static void ApplySettingsWithRetry(FrameworkElement xamlRootContent) {
-    auto retry = [&]() {
-        auto timer = DispatcherTimer();
-        timer.Interval(winrt::Windows::Foundation::TimeSpan{
-            std::chrono::milliseconds(100)});
-        auto tickToken = std::make_shared<winrt::event_token>();
-        *tickToken = timer.Tick(
-            [timer, tickToken, xamlRootContent](
-                winrt::Windows::Foundation::IInspectable const&,
-                winrt::Windows::Foundation::IInspectable const&) {
-                timer.Stop();
-                timer.Tick(*tickToken);
-                ApplySettingsWithRetry(xamlRootContent);
-            });
-        timer.Start();
-    };
-
-    if (g_unloading) {
-        return;
-    }
-
-    auto systemTrayFrame = FindChildByClassName(xamlRootContent, L"SystemTray.SystemTrayFrame");
-    if (!systemTrayFrame) {
-        Wh_Log(L"SystemTrayFrame not found, retrying...");
-        retry();
-        return;
-    }
-
-    auto systemTrayFrameGrid = FindChildByName(systemTrayFrame, L"SystemTrayFrameGrid");
-    if (!systemTrayFrameGrid) {
-        Wh_Log(L"SystemTrayFrameGrid not found, retrying...");
-        retry();
-        return;
-    }
-
-    ApplySettings();
-}
-
 using TrayUI_StartTaskbar_t = void(WINAPI*)(void*);
 static TrayUI_StartTaskbar_t TrayUI_StartTaskbar_Original = nullptr;
 
 static void WINAPI TrayUI_StartTaskbar_Hook(void* pThis) {
     Wh_Log(L"TrayUI_StartTaskbar_Hook: Called");
     TrayUI_StartTaskbar_Original(pThis);
+    g_hookInjectionInProgress = true;
+    struct InjectionGuard {
+        ~InjectionGuard() { g_hookInjectionInProgress = false; }
+    } injectionGuard;
 
     if (g_unloading) {
         Wh_Log(L"TrayUI_StartTaskbar_Hook: Unloading, skipping");
@@ -9546,7 +11608,20 @@ static void WINAPI TrayUI_StartTaskbar_Hook(void* pThis) {
     Wh_Log(L"TrayUI_StartTaskbar_Hook: Reinitializing (hWnd=%p, prev=%p)", hWnd, g_taskbarWnd);
     // StartTaskbar replaces the XAML tree, so old mirror references no longer
     // have a live parent to detach from.
-    g_mirrorPlayers.clear();
+    try {
+        if (!RemoveMirrorPlayers()) {
+            Wh_Log(L"TrayUI_StartTaskbar_Hook: mirror cleanup incomplete");
+        }
+    } catch (...) {
+        Wh_Log(L"TrayUI_StartTaskbar_Hook: mirror cleanup exception");
+    }
+    if (g_layoutUpdateToken.value && g_injectionParent) {
+        try {
+            if (auto oldGrid = g_injectionParent.try_as<Grid>()) {
+                oldGrid.LayoutUpdated(g_layoutUpdateToken);
+            }
+        } catch (...) {}
+    }
     g_playerGrid      = nullptr;
     g_injectionParent = nullptr;
     g_playerColumn    = -1;
@@ -9585,7 +11660,9 @@ static void WINAPI TrayUI_StartTaskbar_Hook(void* pThis) {
         return;
     }
 
-    ApplySettingsWithRetry(xamlRootContent);
+    // If the tray subtree is still being constructed this attempt can fail
+    // safely; TimerThreadProc retries at a bounded one-second cadence.
+    ApplySettings();
 }
 
 static bool HookTaskbarDllSymbols() {
@@ -9622,13 +11699,42 @@ static bool HookTaskbarDllSymbols() {
 }
 
 BOOL Wh_ModInit() {
+    ShellExplorerProcessIdentity shellIdentity =
+        GetCurrentProcessShellExplorerIdentity();
+    g_isShellExplorerProcess =
+        shellIdentity != ShellExplorerProcessIdentity::NonShell;
+    if (!g_isShellExplorerProcess) {
+        Wh_Log(L"Wh_ModInit: skipping non-shell Explorer process %u",
+               GetCurrentProcessId());
+        return TRUE;
+    }
+    if (shellIdentity == ShellExplorerProcessIdentity::StartupCandidate) {
+        Wh_Log(
+            L"Wh_ModInit: shell windows are not registered yet; accepting "
+            L"system Explorer process %u as a deferred startup candidate",
+            GetCurrentProcessId());
+    }
+
     g_unloading = false;
+    ResetWindowDispatchShutdown();
     g_applyingSettings = false;
     g_hookInjectionInProgress = false;
     g_hookFailCount = 0;
     g_taskbarWnd = nullptr;
     g_needsUiUpdate = false;
     g_mirrorPlayers.clear();
+    g_asyncTaskCount = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_asyncThreadsMtx);
+        ReapCompletedAsyncTasksLocked();
+        g_acceptAsyncTasks = true;
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_quickRebuildMtx);
+        g_quickRebuildGeneration = 0;
+        g_quickRebuildWorkerRunning = false;
+        g_quickRebuildNeedsMonitorMove = false;
+    }
 
     LoadSettings();
 
@@ -9640,6 +11746,8 @@ BOOL Wh_ModInit() {
 }
 
 void Wh_ModAfterInit() {
+    if (!g_isShellExplorerProcess) return;
+
     g_taskbarWnd = FindCurrentProcessTaskbarWnd();
     StartMediaThread();
 
@@ -9662,53 +11770,145 @@ void Wh_ModAfterInit() {
     // Start polling and Discord only after the initial XAML injection so they
     // cannot contend with the visible startup path.
     StartTimerThread();
-    if (g_timerUpdateEvent) SetEvent(g_timerUpdateEvent);
+    SignalWorkerEventHandle(g_timerUpdateEvent);
 }
 
 void Wh_ModUninit() {
     g_unloading = true;
+    if (!g_isShellExplorerProcess) return;
+
+    BeginWindowDispatchShutdown();
+    PauseAsyncTasks();
     g_hookInjectionInProgress = false;
     g_hookFailCount = 0;
 
     StopTimerThread();
     StopMediaThread();
+    WaitForAsyncTasks(INFINITE);
     g_settings.transparentTaskbar = false;
-    ApplyTaskbarTransparencyToAll();
-    if (g_taskbarWnd) {
-        RunFromWindowThread(g_taskbarWnd, [](void*) { DestroyVolumePopup(); }, nullptr);
-    } else {
-        DestroyVolumePopup();
-    }
+    ApplyTaskbarTransparencyToAll(true);
 
-    if (g_taskbarWnd)
-        RunFromWindowThread(g_taskbarWnd, [](void*) {
+    bool popupDestroyed = DestroyVolumePopup(true);
+    bool popupClassUnregistered =
+        popupDestroyed && UnregisterVolumePopupClassConfirmed();
+
+    struct PlayerCleanupResult {
+        bool confirmed = false;
+    } playerCleanup;
+
+    auto cleanupPlayer = [](void* parameter) {
+        auto* result = static_cast<PlayerCleanupResult*>(parameter);
+
+        Grid targetGrid{nullptr};
+        bool hadPrimaryPlayer = g_playerGrid != nullptr;
+        bool primaryCallbackRevoked = !g_layoutUpdateToken.value;
+        try {
+            targetGrid = g_injectionParent.try_as<Grid>();
+            if (g_layoutUpdateToken.value && targetGrid) {
+                targetGrid.LayoutUpdated(g_layoutUpdateToken);
+                g_layoutUpdateToken = {};
+                primaryCallbackRevoked = true;
+            }
+        } catch (...) {
+            primaryCallbackRevoked = false;
+        }
+
+        bool mirrorsClean = false;
+        try {
+            mirrorsClean = RemoveMirrorPlayers();
+        } catch (...) {
+            mirrorsClean = false;
+        }
+
+        try {
             RemovePlayerGrid();
-            g_mediaHoverBrush   = nullptr;
-            g_mediaPressedBrush = nullptr;
-            g_playerHoverBrush  = nullptr;
-            g_playerPressedBrush = nullptr;
-            g_playerBorderBrush  = nullptr;
-            g_playerBorderPressedBrush = nullptr;
-        }, nullptr);
-    else {
-        g_mediaHoverBrush   = nullptr;
-        g_mediaPressedBrush = nullptr;
-        g_playerHoverBrush  = nullptr;
-        g_playerPressedBrush = nullptr;
-        g_playerBorderBrush  = nullptr;
-        g_playerBorderPressedBrush = nullptr;
+        } catch (...) {}
+        mirrorsClean = g_mirrorPlayers.empty();
+
+        bool primaryPlayerDetached = !hadPrimaryPlayer;
+        if (targetGrid) {
+            primaryPlayerDetached = true;
+            try {
+                for (uint32_t i = 0;
+                     i < targetGrid.Children().Size(); ++i) {
+                    auto child = targetGrid.Children()
+                                     .GetAt(i)
+                                     .try_as<FrameworkElement>();
+                    if (child && child.Name() == kGridName) {
+                        primaryPlayerDetached = false;
+                        break;
+                    }
+                }
+            } catch (...) {
+                primaryPlayerDetached = false;
+            }
+        } else if (hadPrimaryPlayer) {
+            primaryPlayerDetached = false;
+        }
+
+        result->confirmed =
+            primaryCallbackRevoked &&
+            primaryPlayerDetached &&
+            mirrorsClean &&
+            g_mirrorPlayers.empty();
+    };
+
+    bool playerCleanupDispatched = false;
+    if (g_taskbarWnd && IsWindow(g_taskbarWnd)) {
+        playerCleanupDispatched = RunFromWindowThreadForCleanup(
+            g_taskbarWnd, cleanupPlayer, &playerCleanup);
+    } else {
+        WindowDispatchShutdownScope shutdownScope(true);
+        playerCleanupDispatched =
+            InvokeWindowThreadProcSafely(cleanupPlayer, &playerCleanup);
     }
 
-    if (g_volumePopupBrush) {
+    RetryFailedWindowDispatchHooks();
+    WaitForWindowDispatchActivityIdle();
+    bool hooksUnregistered = RetryFailedWindowDispatchHooks();
+
+    bool requestsDrained = false;
+    {
+        std::lock_guard<std::mutex> lock(g_windowDispatchRequestsMtx);
+        requestsDrained = g_windowDispatchRequests.empty();
+    }
+
+    bool callbackCleanupConfirmed =
+        popupDestroyed &&
+        popupClassUnregistered &&
+        playerCleanupDispatched &&
+        playerCleanup.confirmed &&
+        hooksUnregistered &&
+        requestsDrained;
+    if (!callbackCleanupConfirmed) {
+        PinModuleForOutstandingCallbacks(
+            L"unconfirmed popup, XAML, or dispatch callback cleanup");
+    }
+
+    if (popupDestroyed && popupClassUnregistered && g_volumePopupBrush) {
         DeleteObject(g_volumePopupBrush);
         g_volumePopupBrush = nullptr;
     }
 }
 
 void Wh_ModSettingsChanged() {
-    g_applyingSettings = true;
+    if (!g_isShellExplorerProcess) return;
 
+    if (!AcquireSettingsApplyGateForFullApply()) return;
+    struct SettingsApplyGateRelease {
+        bool active = true;
+        ~SettingsApplyGateRelease() {
+            if (active) {
+                g_applyingSettings.store(
+                    false, std::memory_order_release);
+            }
+        }
+    } gateRelease;
+
+    PauseAsyncTasks();
     StopTimerThread();
+    StopMediaThread();
+    WaitForAsyncTasks(INFINITE);
 
     // Values selected from the compact context menu are temporary overrides.
     // Applying the full Windhawk settings makes the configured values authoritative.
@@ -9717,13 +11917,19 @@ void Wh_ModSettingsChanged() {
     Wh_SetIntValue(L"quickTaskbarNumber", -1);
     Wh_SetIntValue(L"quickBackground", -1);
     Wh_SetIntValue(L"quickTransparentTaskbar", -1);
+    Wh_SetIntValue(L"quickMediaSourceOverride", -1);
+    Wh_SetStringValue(L"quickPreferredMediaApp", L"");
 
     HWND previousTaskbarWnd = g_taskbarWnd;
     LoadSettings();
+    ApplyTaskbarTransparencyToAll();
 
     HWND hWnd = FindCurrentProcessTaskbarWnd();
     if (!hWnd) {
-        g_applyingSettings = false;
+        ResumeAsyncTasks();
+        g_applyingSettings.store(false, std::memory_order_release);
+        gateRelease.active = false;
+        StartMediaThread();
         StartTimerThread();
         return;
     }
@@ -9743,42 +11949,7 @@ void Wh_ModSettingsChanged() {
     }
     g_taskbarWnd = hWnd;
 
-    DWORD threadId = GetWindowThreadProcessId(hWnd, nullptr);
-    if (threadId && threadId != GetCurrentThreadId()) {
-        struct WorkData { HWND hWnd; };
-        WorkData* data = new WorkData{hWnd};
-
-        HANDLE hThread = CreateThread(nullptr, 0, [](LPVOID param) WINAPI -> DWORD {
-            WorkData* data2 = (WorkData*)param;
-            RunFromWindowThread(data2->hWnd, [](void*) {
-                try {
-                    RemovePlayerGrid();
-                    g_cachedAlbumTitle.clear();
-                    g_cachedAlbumArtist.clear();
-                    g_cachedThumbnailBytes.clear();
-                    g_cachedPaletteHash = 0;
-                    g_blurBgCache.Invalidate();
-                    g_applyingSettings = false;
-                    if (!g_unloading) {
-                        InjectPlayerGrid();
-                        g_needsUiUpdate = true;
-                    }
-                } catch (...) {
-                    Wh_Log(L"Wh_ModSettingsChanged: Exception during RemovePlayerGrid/InjectPlayerGrid");
-                    g_applyingSettings = false;
-                    g_playerGrid = nullptr;
-                    g_injectionParent = nullptr;
-                }
-            }, nullptr);
-            return 0;
-        }, data, 0, nullptr);
-
-        if (hThread) {
-            WaitForSingleObject(hThread, 2000);
-            CloseHandle(hThread);
-        }
-        delete data;
-    } else {
+    bool dispatched = RunFromWindowThread(hWnd, [](void*) {
         try {
             RemovePlayerGrid();
             g_cachedAlbumTitle.clear();
@@ -9786,18 +11957,24 @@ void Wh_ModSettingsChanged() {
             g_cachedThumbnailBytes.clear();
             g_cachedPaletteHash = 0;
             g_blurBgCache.Invalidate();
-            g_applyingSettings = false;
             if (!g_unloading) {
                 InjectPlayerGrid();
                 g_needsUiUpdate = true;
             }
         } catch (...) {
-            Wh_Log(L"Wh_ModSettingsChanged: Exception during RemovePlayerGrid/InjectPlayerGrid (same thread)");
-            g_applyingSettings = false;
+            Wh_Log(L"Wh_ModSettingsChanged: Exception during RemovePlayerGrid/InjectPlayerGrid");
             g_playerGrid = nullptr;
             g_injectionParent = nullptr;
         }
+    }, nullptr);
+    if (!dispatched) {
+        Wh_Log(L"Wh_ModSettingsChanged: couldn't reach the taskbar UI thread");
     }
 
+    ResumeAsyncTasks();
+    g_applyingSettings.store(false, std::memory_order_release);
+    gateRelease.active = false;
+    StartMediaThread();
     StartTimerThread();
+    RequestMediaSessionRefresh();
 }
