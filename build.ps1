@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('all', '64', '32')]
-    [string]$Architecture = 'all'
+    [ValidateSet('all', '64', 'arm64')]
+    [string]$Architecture = '64'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -20,6 +20,14 @@ if (-not (Test-Path -LiteralPath $compilerPath)) {
     throw "Windhawk compiler not found: $compilerPath"
 }
 
+$versionLine = Select-String -LiteralPath $sourcePath `
+    -Pattern '^\s*//\s*@version\s+([0-9]+\.[0-9]+\.[0-9]+)\s*$' |
+    Select-Object -First 1
+if (-not $versionLine) {
+    throw "Windhawk @version metadata is missing from $sourcePath"
+}
+$modVersion = $versionLine.Matches[0].Groups[1].Value
+
 $engineRelativePath = Get-Content -LiteralPath $windhawkIni |
     Where-Object { $_ -like 'EnginePath=*' } |
     Select-Object -First 1
@@ -31,7 +39,7 @@ $engineRoot = Join-Path $windhawkRoot $engineRelativePath
 
 $targets = @(
     @{ Folder = '64'; Triple = 'x86_64-w64-mingw32' },
-    @{ Folder = '32'; Triple = 'i686-w64-mingw32' }
+    @{ Folder = 'arm64'; Triple = 'aarch64-w64-mingw32' }
 )
 if ($Architecture -ne 'all') {
     $targets = $targets | Where-Object { $_.Folder -eq $Architecture }
@@ -42,17 +50,18 @@ try {
     foreach ($target in $targets) {
         $outputDirectory = Join-Path $projectRoot (Join-Path 'build' $target.Folder)
         New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
-        $outputPath = Join-Path $outputDirectory 'taskbar-media-presence_0.10.1.dll'
+        $outputPath = Join-Path $outputDirectory "taskbar-media-presence_$modVersion.dll"
         $engineLibrary = Join-Path $engineRoot (Join-Path $target.Folder 'windhawk.lib')
 
         $compilerArgs = @(
-            '-std=c++23', '-O2', '-shared',
+            '-std=c++23', '-O2', '-shared', '-Wall', '-Wextra',
+            '-Wno-unused-parameter',
             '-DUNICODE', '-D_UNICODE',
             '-DWINVER=0x0A00', '-D_WIN32_WINNT=0x0A00',
             '-D_WIN32_IE=0x0A00', '-DNTDDI_VERSION=0x0A000008',
             '-D__USE_MINGW_ANSI_STDIO=0', '-DWH_MOD',
             '-DWH_MOD_ID=L"taskbar-media-presence"',
-            '-DWH_MOD_VERSION=L"0.10.1"',
+            "-DWH_MOD_VERSION=L`"$modVersion`"",
             '-DWH_WINDHAWK_VERSION=0x01070300',
             $engineLibrary,
             '-x', 'c++', $sourcePath,
