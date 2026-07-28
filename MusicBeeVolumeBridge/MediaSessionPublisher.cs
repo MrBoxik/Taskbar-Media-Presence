@@ -633,14 +633,17 @@ namespace MusicBeePlugin
                 : new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
             using (Image source = Image.FromStream(input, false, true))
             {
-                int cropSide = Math.Min(source.Width, source.Height);
-                int outputSide = Math.Min(MaximumArtworkSide, cropSide);
-                if (outputSide <= 0)
+                int sourceWidth = source.Width;
+                int sourceHeight = source.Height;
+                if (sourceWidth <= 0 || sourceHeight <= 0)
                     throw new InvalidDataException("Artwork has invalid dimensions.");
 
-                int sourceX = (source.Width - cropSide) / 2;
-                int sourceY = (source.Height - cropSide) / 2;
-                using (var output = new Bitmap(outputSide, outputSide, PixelFormat.Format32bppArgb))
+                double scale = Math.Min(
+                    1.0,
+                    (double)MaximumArtworkSide / Math.Max(sourceWidth, sourceHeight));
+                int outputWidth = Math.Max(1, (int)Math.Round(sourceWidth * scale));
+                int outputHeight = Math.Max(1, (int)Math.Round(sourceHeight * scale));
+                using (var output = new Bitmap(outputWidth, outputHeight, PixelFormat.Format32bppArgb))
                 {
                     output.SetResolution(96, 96);
                     using (Graphics graphics = Graphics.FromImage(output))
@@ -652,8 +655,8 @@ namespace MusicBeePlugin
                         graphics.SmoothingMode = SmoothingMode.HighQuality;
                         graphics.DrawImage(
                             source,
-                            new Rectangle(0, 0, outputSide, outputSide),
-                            new Rectangle(sourceX, sourceY, cropSide, cropSide),
+                            new Rectangle(0, 0, outputWidth, outputHeight),
+                            new Rectangle(0, 0, sourceWidth, sourceHeight),
                             GraphicsUnit.Pixel);
                     }
                     output.Save(targetPath, ImageFormat.Png);

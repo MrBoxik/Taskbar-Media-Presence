@@ -69,10 +69,9 @@ try {
             '-target', $target.Triple,
             '-Wl,--export-all-symbols',
             '-o', $outputPath,
-            '-lole32', '-loleaut32', '-lruntimeobject', '-lversion',
+            '-lole32', '-loleaut32', '-lruntimeobject',
             '-luuid', '-luser32', '-lwindowsapp', '-lshell32', '-lgdi32',
-            '-lshlwapi', '-lwindowscodecs', '-ldwmapi', '-lshcore', '-lksuser',
-            '-lcomctl32', '-lwinhttp'
+            '-lshlwapi', '-lwindowscodecs', '-ldwmapi', '-lshcore', '-lwinhttp'
         )
 
         & $compilerPath @compilerArgs

@@ -1,7 +1,8 @@
-# Taskbar Media Presence 1.0.0
+# Taskbar Media Presence
 
 [![Support on Buy Me a Coffee](https://img.shields.io/badge/Support-Buy%20Me%20a%20Coffee-FFDD00?logo=buymeacoffee&logoColor=000000)](https://buymeacoffee.com/mrboxik)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/MrBoxik/Taskbar-Media-Presence)](https://github.com/MrBoxik/Taskbar-Media-Presence/releases/latest)
 
 Taskbar Media Presence is a Windows 11 Windhawk mod that puts an interactive music player directly on the taskbar. It uses Windows Global System Media Transport Controls (GSMTC), so one widget can work with MusicBee, Media Player, Spotify, browsers, and other applications that publish a Windows media session.
 
@@ -11,7 +12,7 @@ Taskbar Media Presence is a Windows 11 Windhawk mod that puts an interactive mus
 - Per-application volume without changing Windows master volume.
 - A single original MusicBee companion for its media session and exact internal player volume.
 - Automatic source selection or a preferred application selected from the right-click **Media source** menu.
-- One selected monitor or an interactive mirrored widget on every taskbar.
+- One selected monitor or an interactive mirrored widget on every compatible taskbar.
 - After-apps, left, adaptive middle/far-left, tray-side, and custom placement.
 - One-way marquee, bounce, or fixed ellipsis for long titles.
 - Transparent widget and transparent Windows taskbar toggles.
@@ -27,16 +28,19 @@ The widget intentionally has no visualizer or Stop control.
 
 Taskbar internals can change in future Windows builds. The mod fails closed when it cannot safely identify the current taskbar structure instead of guessing an Explorer pointer.
 
-## Install the Windhawk mod
+Windows normally hosts the taskbars for all monitors on one compatible XAML UI dispatcher. If a Windows build hosts a secondary taskbar on a separate dispatcher, the mod skips that mirror and writes the reason to its debug log instead of making a risky cross-thread XAML call.
 
-After the mod is accepted into the Windhawk repository, install **Taskbar Media Presence** from Windhawk's **Explore** page.
+## Install from Windhawk
 
-For a local test build:
+Once the mod is published in Windhawk's catalog:
 
-1. In Windhawk, choose **Create a new mod**.
-2. Replace the sample with [`taskbar-media-presence.wh.cpp`](taskbar-media-presence.wh.cpp).
-3. Choose **Compile Mod**, then enable it.
-4. Play media and right-click the widget to select a source, position, or monitor.
+1. Install and open [Windhawk](https://windhawk.net/).
+2. Open **Explore** and search for **Taskbar Media Presence**.
+3. Select the mod and choose **Install**.
+4. Play media. Right-click the taskbar widget to choose its source, position, monitor, transparency, or other quick options.
+5. Open the mod's **Settings** page in Windhawk for the full set of appearance, control, Discord, and troubleshooting options.
+
+Windhawk installs and updates the mod itself; normal users do not need to create a mod or paste source code.
 
 ## MusicBee: install the single companion
 
@@ -50,7 +54,7 @@ MusicBee needs the companion if it does not already publish a reliable Windows m
 
 Only `mb_TaskbarMediaPresence.dll` is needed. It is an original implementation based on MusicBee's official plugin interface and Microsoft's SMTC APIs; it does not contain code from `mb_MediaControl`, Music Presence, or another third-party plugin.
 
-The companion provides metadata, centre-cropped artwork, playback state, timeline, seeking, Shuffle/Repeat, transport commands, and MusicBee's internal volume over a current-user-only local named pipe.
+The companion provides metadata, aspect-ratio-preserving artwork, playback state, timeline, seeking, Shuffle/Repeat, transport commands, and MusicBee's internal volume over a current-user-only local named pipe.
 
 ### Upgrade or uninstall the MusicBee companion
 
@@ -97,7 +101,9 @@ New Discord assets can take several minutes to become available.
 
 ## Troubleshooting
 
-- If the widget is missing during sign-in, allow a few seconds for Explorer and the Windows media broker to finish starting. Version 1.0 retries both safely without needing a Windhawk off/on cycle.
+- If the widget is missing during sign-in, allow a few seconds for Explorer and the Windows media broker to finish starting. Version 1.0.10 retries both safely without needing a Windhawk off/on cycle.
+- If Windhawk reports system instability or Explorer repeatedly restarts, leave the affected version disabled. Start Windhawk with its official `-safe-mode` switch if the normal UI cannot stay open, disable the mod, restart Explorer or sign out, and install the newest available version before testing again.
+- While diagnosing taskbar appearance, temporarily close TranslucentTB and disable other taskbar-injection mods. The built-in **Transparent taskbar** option defers to a detected external transparency provider, so use only one provider for predictable results.
 - If MusicBee shows stale or duplicate sessions, close it, remove both legacy plugin DLLs, and keep only `mb_TaskbarMediaPresence.dll`.
 - If MusicBee reports that the companion is blocked or does not load, close MusicBee, open the downloaded DLL's **Properties**, select **Unblock**, and install it again with **Add Plugin**.
 - If a player appears but volume does not work, verify that it has an active entry in Windows Volume Mixer and that its audio process belongs to the same application identity as its media session.
@@ -123,8 +129,12 @@ Use `-Architecture all` to verify both targets in one pass. The public mod uses 
 
 Artifacts are written under `build` and are intentionally not committed.
 
+Maintainers can follow [RELEASING.md](RELEASING.md) for the project release and the separate one-file Windhawk catalog submission.
+
 ## Attribution and license
 
 Taskbar Media Presence is maintained by [MrBoxik](https://github.com/MrBoxik). If it is useful to you, [support the project](https://buymeacoffee.com/mrboxik).
 
-This project is an attributed derivative of [Taskbar Fluent Media Player](https://github.com/Salyts/Taskbar-Fluent-Media-Player) by Salyts. It is distributed under the [MIT License](LICENSE). The full license notice is also embedded in the single-file Windhawk source submitted to the Windhawk repository.
+The Windhawk mod is an attributed derivative of [Taskbar Fluent Media Player](https://github.com/Salyts/Taskbar-Fluent-Media-Player) by Salyts. It remains under the [MIT License](LICENSE), with both copyright notices preserved. The same notice is embedded in the single-file source submitted to Windhawk.
+
+The separately written MusicBee companion under `MusicBeeVolumeBridge` is covered by its [custom non-commercial license](MusicBeeVolumeBridge/LICENSE). That license does not apply to the derivative Windhawk mod or replace Salyts' MIT terms.

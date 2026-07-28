@@ -4,7 +4,7 @@ This is the single MusicBee plugin for Taskbar Media Presence. It is an original
 
 It provides:
 
-- title, artist, album, centre-cropped artwork, playback state and timeline to Windows;
+- title, artist, album, aspect-ratio-preserving artwork, playback state and timeline to Windows;
 - previous, play/pause, next, seek, shuffle and repeat requests from Windows;
 - MusicBee's internal volume and mute through the private local Taskbar Media Presence pipe;
 - guarded cold-start retries so an unfinished MusicBee restore is never published as `Untitled`;
@@ -19,6 +19,8 @@ It provides:
 5. Restart MusicBee and confirm **Taskbar Media Presence** is enabled under **Edit > Preferences > Plugins**.
 
 Only this one DLL is needed. It does not need a bot token, Discord secret, cloud service, or network access at runtime.
+
+The companion's original source and compiled binary are covered by the [custom non-commercial license](LICENSE). The Windhawk mod has a separate MIT license because it is an attributed derivative of Taskbar Fluent Media Player.
 
 ## Runtime model
 
