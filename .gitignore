@@ -2,6 +2,7 @@
 /MusicBeeVolumeBridge/bin/
 /MusicBeeVolumeBridge/obj/
 /plugins/
+/news/
 /.vs/
 *.user
 *.suo

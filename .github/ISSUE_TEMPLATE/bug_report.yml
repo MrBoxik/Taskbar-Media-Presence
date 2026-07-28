@@ -19,7 +19,7 @@ body:
     id: windhawk-version
     attributes:
       label: Windhawk and mod versions
-      placeholder: Windhawk 1.7.3, Taskbar Media Presence 1.0.0
+      placeholder: Windhawk version, Taskbar Media Presence 1.0.10
     validations:
       required: true
   - type: input
