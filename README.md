@@ -32,15 +32,46 @@ Windows normally hosts the taskbars for all monitors on one compatible XAML UI d
 
 ## Install from Windhawk
 
+### Install from the catalog
+
 Once the mod is published in Windhawk's catalog:
 
 1. Install and open [Windhawk](https://windhawk.net/).
 2. Open **Explore** and search for **Taskbar Media Presence**.
 3. Select the mod and choose **Install**.
-4. Play media. Right-click the taskbar widget to choose its source, position, monitor, transparency, or other quick options.
-5. Open the mod's **Settings** page in Windhawk for the full set of appearance, control, Discord, and troubleshooting options.
+4. Play media.
+5. Right-click the taskbar widget to choose its source, position, monitor, transparency, or other quick options.
+6. Open the mod's **Settings** page in Windhawk for the full set of appearance, control, Discord, and troubleshooting options.
 
-Windhawk installs and updates the mod itself; normal users do not need to create a mod or paste source code.
+### Manual installation
+
+If **Taskbar Media Presence** is not searchable in Windhawk's catalog yet:
+
+1. Open [`taskbar-media-presence.wh.cpp`](https://github.com/MrBoxik/Taskbar-Media-Presence/blob/main/taskbar-media-presence.wh.cpp).
+2. Click the **Download raw file** button in the top-right corner of the file viewer.
+
+   Alternatively, click **Raw**, press `Ctrl + A`, and then press `Ctrl + C` to copy the complete source code.
+
+3. Open Windhawk.
+4. Click **Create a new mod** in the bottom-right corner.
+5. Delete all default template code from the editor.
+6. Open the downloaded file in a text editor and copy its entire contents.
+7. Paste the source code into the Windhawk editor.
+8. Click **Compile Mod**.
+9. Wait for Windhawk to report that the mod compiled successfully.
+10. Click **Exit Editing Mode**.
+
+The mod should now be installed and enabled.
+
+Play media and right-click the taskbar widget to configure its:
+
+- Media source
+- Position
+- Monitor
+- Transparency
+- Other quick options
+
+Open the mod's **Settings** page in Windhawk to access all appearance, playback control, Discord Rich Presence, and troubleshooting options.
 
 ## MusicBee: install the single companion
 
