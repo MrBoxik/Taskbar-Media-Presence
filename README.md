@@ -129,6 +129,8 @@ Use `-Architecture all` to verify both targets in one pass. The public mod uses 
 
 Artifacts are written under `build` and are intentionally not committed.
 
+Maintainers can follow [RELEASING.md](RELEASING.md) for the project release and the separate one-file Windhawk catalog submission.
+
 ## Attribution and license
 
 Taskbar Media Presence is maintained by [MrBoxik](https://github.com/MrBoxik). If it is useful to you, [support the project](https://buymeacoffee.com/mrboxik).
