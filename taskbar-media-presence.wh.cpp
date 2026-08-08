@@ -619,6 +619,7 @@ Created and maintained by **[MrBoxik](https://github.com/MrBoxik)**. Based on **
     $name: Hide when no media is playing
   - hideFullscreen: true
     $name: Hide when a fullscreen app is running
+    $description: Hides only widgets on monitors covered by the foreground fullscreen app. Widgets on other monitors stay visible.
   - idleHideSeconds: 0
     $name: Idle auto-hide timeout (seconds, 0 = disabled)
   - showFullTitleOnHover: true
@@ -1923,6 +1924,7 @@ static bool g_playerColumnInserted = false;
 static bool g_playerColumnShiftCommitted = false;
 [[clang::no_destroy]] static std::vector<ShiftedColumnChild> g_playerColumnShiftedChildren;
 static std::atomic<bool> g_needsUiUpdate{false};
+static std::atomic<bool> g_needsVisibilityUpdate{false};
 
 static HANDLE OpenTaskbarOwnerThreadHandle(DWORD threadId) {
     if (!threadId) return nullptr;
@@ -8197,6 +8199,7 @@ static void DispatchMediaUpdate() {
 
 static void RefreshPlayerContents();
 static void UpdateVisibility();
+static uint64_t GetFullscreenStateFingerprint();
 static void RefreshThemeColors();
 static winrt::Windows::UI::Color ProgressFillColor();
 static winrt::Windows::UI::Color ProgressTrackColor();
@@ -8376,6 +8379,8 @@ static DWORD TimerThreadMain() {
     ULONGLONG taskbarTopologyRebuildDueTick = 0;
     ULONGLONG themeRefreshDueTick = 0;
     ULONGLONG idleStoppedSinceTick = 0;
+    bool fullscreenStateKnown = false;
+    uint64_t lastFullscreenStateFingerprint = 0;
     uint64_t lastTaskbarTopology = GetTaskbarTopologyFingerprint();
     bool topologyOwnerWasLive = true;
     bool externalTransparencyProviderPresent =
@@ -8648,6 +8653,22 @@ static DWORD TimerThreadMain() {
 
         bool needsUpdate = g_needsUiUpdate.exchange(false);
 
+        // Windows explicitly doesn't notify applications when fullscreen apps
+        // start or stop. Track the foreground window, its bounds, and the shell
+        // notification state so fullscreen/monitor transitions get a cheap
+        // visibility-only refresh without rebuilding media contents.
+        uint64_t fullscreenStateFingerprint = Cfg()->hideFullscreen
+            ? GetFullscreenStateFingerprint()
+            : 0;
+        bool visibilityUpdate =
+            g_needsVisibilityUpdate.exchange(false);
+        if (!fullscreenStateKnown ||
+            fullscreenStateFingerprint != lastFullscreenStateFingerprint) {
+            fullscreenStateKnown = true;
+            lastFullscreenStateFingerprint = fullscreenStateFingerprint;
+            visibilityUpdate = true;
+        }
+
         if (Cfg()->idleHideSeconds > 0) {
             bool playing = false;
             {
@@ -8681,15 +8702,35 @@ static DWORD TimerThreadMain() {
             }
         }
 
-        if (needsUpdate && uiUpdateWindow) {
-            RunFromWindowThread(uiUpdateWindow, [](void*) {
-                if (TaskbarXamlCallbacksSuppressed()) return;
-                if (g_playerGrid) {
-                    RefreshPlayerContents();
-                    UpdateVisibility();
-                    RefreshScrollDispatcherTimerCadence();
+        if (needsUpdate || visibilityUpdate) {
+            struct TimerUiUpdateWork {
+                bool refreshContents;
+            } work{needsUpdate};
+            bool dispatched = uiUpdateWindow &&
+                RunFromWindowThread(uiUpdateWindow, [](void* parameter) {
+                    if (TaskbarXamlCallbacksSuppressed()) return;
+                    if (g_playerGrid) {
+                        auto* workItem =
+                            static_cast<TimerUiUpdateWork*>(parameter);
+                        if (workItem->refreshContents) {
+                            RefreshPlayerContents();
+                        }
+                        UpdateVisibility();
+                        if (workItem->refreshContents) {
+                            RefreshScrollDispatcherTimerCadence();
+                        }
+                    }
+                }, &work);
+            if (!dispatched) {
+                // Don't consume the state transition when the taskbar thread is
+                // temporarily unavailable or busy (common while games change
+                // display modes). Retry on the next timer pass.
+                if (needsUpdate) g_needsUiUpdate = true;
+                if (visibilityUpdate) {
+                    g_needsVisibilityUpdate = true;
+                    fullscreenStateKnown = false;
                 }
-            }, nullptr);
+            }
         }
     }
 
@@ -14781,19 +14822,18 @@ static void RefreshPlayerContents() {
     }
 }
 
-static bool IsFullscreenActive() {
-    QUERY_USER_NOTIFICATION_STATE state = QUNS_NOT_PRESENT;
-    if (SUCCEEDED(SHQueryUserNotificationState(&state)) &&
-        (state == QUNS_RUNNING_D3D_FULL_SCREEN ||
-         state == QUNS_PRESENTATION_MODE)) {
-        return true;
-    }
+struct ForegroundWindowSnapshot {
+    HWND window = nullptr;
+    RECT bounds{};
+    HMONITOR dominantMonitor = nullptr;
+};
 
-    // QUNS_BUSY is intentionally ignored. It is also reported for several
-    // non-fullscreen shell/user states; opening Start can temporarily clear it,
-    // making the widget appear only while the Windows key is held/open.
+static bool GetForegroundWindowSnapshot(ForegroundWindowSnapshot& snapshot) {
+    snapshot = {};
     HWND foreground = GetForegroundWindow();
-    if (!foreground || IsIconic(foreground)) return false;
+    if (!foreground || !IsWindow(foreground) || IsIconic(foreground)) {
+        return false;
+    }
 
     wchar_t className[128]{};
     GetClassNameW(foreground, className, ARRAYSIZE(className));
@@ -14819,23 +14859,83 @@ static bool IsFullscreenActive() {
         return false;
     }
 
-    HMONITOR monitor = MonitorFromWindow(
-        foreground, MONITOR_DEFAULTTONEAREST);
+    snapshot.window = foreground;
+    snapshot.bounds = windowRect;
+    snapshot.dominantMonitor = MonitorFromWindow(
+        foreground, MONITOR_DEFAULTTONULL);
+    return snapshot.dominantMonitor != nullptr;
+}
+
+static bool ForegroundWindowCoversMonitor(
+    ForegroundWindowSnapshot const& snapshot, HMONITOR monitor) {
+    if (!snapshot.window || !monitor) return false;
+
     MONITORINFO monitorInfo{};
     monitorInfo.cbSize = sizeof(monitorInfo);
     if (!GetMonitorInfoW(monitor, &monitorInfo)) return false;
 
     constexpr LONG tolerance = 2;
     const RECT& monitorRect = monitorInfo.rcMonitor;
-    return windowRect.left <= monitorRect.left + tolerance &&
-           windowRect.top <= monitorRect.top + tolerance &&
-           windowRect.right >= monitorRect.right - tolerance &&
-           windowRect.bottom >= monitorRect.bottom - tolerance;
+    bool coversMonitor =
+        snapshot.bounds.left <= monitorRect.left + tolerance &&
+        snapshot.bounds.top <= monitorRect.top + tolerance &&
+        snapshot.bounds.right >= monitorRect.right - tolerance &&
+        snapshot.bounds.bottom >= monitorRect.bottom - tolerance;
+    if (!coversMonitor) return false;
+
+    // A regular maximized window can cover the monitor when the taskbar uses
+    // auto-hide. It isn't a fullscreen app and must not hide the widget.
+    LONG_PTR style = GetWindowLongPtrW(snapshot.window, GWL_STYLE);
+    if (IsZoomed(snapshot.window) && (style & WS_CAPTION)) return false;
+    return true;
 }
 
-static bool ShouldHidePlayer() {
+static bool IsFullscreenActiveForTaskbar(HWND taskbarWindow) {
+    if (!taskbarWindow || !IsWindow(taskbarWindow)) return false;
+    HMONITOR taskbarMonitor = MonitorFromWindow(
+        taskbarWindow, MONITOR_DEFAULTTONULL);
+    if (!taskbarMonitor) return false;
+
+    ForegroundWindowSnapshot snapshot;
+    return GetForegroundWindowSnapshot(snapshot) &&
+           ForegroundWindowCoversMonitor(snapshot, taskbarMonitor);
+}
+
+static uint64_t GetFullscreenStateFingerprint() {
+    ForegroundWindowSnapshot snapshot;
+    if (!GetForegroundWindowSnapshot(snapshot)) return 0;
+
+    // Include the shell's global notification state only as a change signal.
+    // It is deliberately not used to decide which monitor to hide: Microsoft
+    // documents it as a current-user notification state, not per-monitor data.
+    QUERY_USER_NOTIFICATION_STATE notificationState = QUNS_NOT_PRESENT;
+    if (FAILED(SHQueryUserNotificationState(&notificationState))) {
+        notificationState = QUNS_NOT_PRESENT;
+    }
+
+    uint64_t hash = 1469598103934665603ull;
+    auto mix = [&hash](uint64_t value) {
+        hash ^= value;
+        hash *= 1099511628211ull;
+    };
+    mix(static_cast<uint64_t>(
+        reinterpret_cast<uintptr_t>(snapshot.window)));
+    mix(static_cast<uint64_t>(
+        reinterpret_cast<uintptr_t>(snapshot.dominantMonitor)));
+    mix(static_cast<uint32_t>(snapshot.bounds.left));
+    mix(static_cast<uint32_t>(snapshot.bounds.top));
+    mix(static_cast<uint32_t>(snapshot.bounds.right));
+    mix(static_cast<uint32_t>(snapshot.bounds.bottom));
+    mix(static_cast<uint32_t>(notificationState));
+    return hash;
+}
+
+static bool ShouldHidePlayer(HWND taskbarWindow) {
     bool hide = false;
-    if (Cfg()->hideFullscreen && IsFullscreenActive()) hide = true;
+    if (Cfg()->hideFullscreen &&
+        IsFullscreenActiveForTaskbar(taskbarWindow)) {
+        hide = true;
+    }
     if (!hide && g_hiddenByIdle.load(std::memory_order_relaxed)) hide = true;
 
     if (!hide) {
@@ -14940,13 +15040,17 @@ static void UpdateVisibilityForGrid(
 
 static void UpdateVisibility() {
     if (TaskbarXamlCallbacksSuppressed()) return;
-    bool hide = ShouldHidePlayer();
 
     Grid primaryGrid = g_playerGrid;
     FrameworkElement primaryParent = g_injectionParent;
     if (primaryGrid) {
+        HWND primaryTaskbar = g_playerOwnerWindow.load();
+        if (!primaryTaskbar || !IsWindow(primaryTaskbar)) {
+            primaryTaskbar = g_taskbarWnd.load();
+        }
         UpdateVisibilityForGrid(
-            primaryGrid, primaryParent, g_playerColumn, hide);
+            primaryGrid, primaryParent, g_playerColumn,
+            ShouldHidePlayer(primaryTaskbar));
     }
 
     auto mirrors = SnapshotMirrorPlayers();
@@ -14954,17 +15058,25 @@ static void UpdateVisibility() {
         if (!instance || !instance->playerGrid) continue;
         struct MirrorVisibilityWork {
             std::shared_ptr<MirrorPlayerInstance> instance;
-            bool hide;
-        } work{instance, hide};
-        RunFromWindowThread(instance->taskbarWindow, [](void* parameter) {
+        } work{instance};
+        bool dispatched = RunFromWindowThread(
+            instance->taskbarWindow, [](void* parameter) {
             if (TaskbarXamlCallbacksSuppressed()) return;
             auto* workItem = static_cast<MirrorVisibilityWork*>(parameter);
             auto const& mirror = workItem->instance;
             if (!mirror || !mirror->playerGrid) return;
             UpdateVisibilityForGrid(
                 mirror->playerGrid, mirror->targetGrid,
-                mirror->playerColumn, workItem->hide);
+                mirror->playerColumn,
+                ShouldHidePlayer(mirror->taskbarWindow));
         }, &work);
+        if (!dispatched) {
+            // A secondary taskbar can be briefly unresponsive during a display
+            // mode switch even while the primary taskbar succeeds. Re-arm the
+            // update for the next bounded timer pass instead of leaving that
+            // monitor stuck or spinning on an invalid taskbar window.
+            g_needsVisibilityUpdate = true;
+        }
     }
 }
 
@@ -15320,6 +15432,7 @@ static BOOL ModInitImpl() {
     g_taskbarOriginalsInProgress = 0;
     g_taskbarXamlCallbacksSuppressed = false;
     g_needsUiUpdate = false;
+    g_needsVisibilityUpdate = false;
     g_mediaEventUnsubscribeFailed = false;
     ClearMirrorPlayers();
     {
