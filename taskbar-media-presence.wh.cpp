@@ -2,7 +2,7 @@
 // @id              taskbar-media-presence
 // @name            Taskbar Media Presence
 // @description     Taskbar music controls with adaptive album art, per-app volume, safe multi-monitor placement, and Discord Rich Presence.
-// @version         1.0.23
+// @version         1.0.26
 // @author          MrBoxik
 // @github          https://github.com/MrBoxik
 // @homepage        https://github.com/MrBoxik/Taskbar-Media-Presence
@@ -15,7 +15,7 @@
 
 // ==WindhawkModReadme==
 /*
-# Taskbar Media Presence 1.0.23
+# Taskbar Media Presence 1.0.26
 
 A compact Windows 11 taskbar player for any application that publishes a Windows media session.
 
@@ -1601,10 +1601,10 @@ static std::deque<std::function<void()>> g_asyncTaskQueue;
 static HANDLE g_asyncTaskThread = nullptr;
 static HANDLE g_asyncTaskAvailableEvent = nullptr;
 static HANDLE g_asyncTaskStopEvent = nullptr;
-static HANDLE g_asyncTaskIdleEvent = nullptr;
 static std::atomic<DWORD> g_asyncTaskThreadId{0};
-static bool g_asyncTaskRunning = false;
 static bool g_acceptAsyncTasks = true;
+
+static void ResetAsyncProducerStateForWorkerRestart();
 
 template <typename TAsyncOperation>
 static auto WaitForWinrtOperation(
@@ -1646,15 +1646,6 @@ static auto WaitForWinrtOperation(
     }
 }
 
-static void UpdateAsyncTaskIdleEventLocked() {
-    if (!g_asyncTaskIdleEvent) return;
-    if (!g_asyncTaskRunning && g_asyncTaskQueue.empty()) {
-        SetEvent(g_asyncTaskIdleEvent);
-    } else {
-        ResetEvent(g_asyncTaskIdleEvent);
-    }
-}
-
 static DWORD WINAPI AsyncTaskThreadProc(void*) noexcept {
     g_asyncTaskThreadId.store(GetCurrentThreadId(), std::memory_order_release);
     HRESULT apartmentResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -1668,8 +1659,6 @@ static DWORD WINAPI AsyncTaskThreadProc(void*) noexcept {
             if (!g_asyncTaskQueue.empty()) {
                 task = std::move(g_asyncTaskQueue.front());
                 g_asyncTaskQueue.pop_front();
-                g_asyncTaskRunning = true;
-                UpdateAsyncTaskIdleEventLocked();
                 if (g_asyncTaskQueue.empty() && g_asyncTaskAvailableEvent) {
                     ResetEvent(g_asyncTaskAvailableEvent);
                 }
@@ -1684,8 +1673,6 @@ static DWORD WINAPI AsyncTaskThreadProc(void*) noexcept {
             }
             {
                 std::lock_guard<std::mutex> lock(g_asyncTasksMtx);
-                g_asyncTaskRunning = false;
-                UpdateAsyncTaskIdleEventLocked();
                 if (!g_asyncTaskQueue.empty() && g_asyncTaskAvailableEvent) {
                     SetEvent(g_asyncTaskAvailableEvent);
                 }
@@ -1702,8 +1689,6 @@ static DWORD WINAPI AsyncTaskThreadProc(void*) noexcept {
     {
         std::lock_guard<std::mutex> lock(g_asyncTasksMtx);
         g_asyncTaskQueue.clear();
-        g_asyncTaskRunning = false;
-        UpdateAsyncTaskIdleEventLocked();
     }
     if (callCancellationEnabled) CoDisableCallCancellation(nullptr);
     if (SUCCEEDED(apartmentResult)) CoUninitialize();
@@ -1724,29 +1709,45 @@ static void CloseAsyncTaskWorkerHandlesLocked() {
         CloseHandle(g_asyncTaskStopEvent);
         g_asyncTaskStopEvent = nullptr;
     }
-    if (g_asyncTaskIdleEvent) {
-        CloseHandle(g_asyncTaskIdleEvent);
-        g_asyncTaskIdleEvent = nullptr;
-    }
     g_asyncTaskThreadId.store(0, std::memory_order_release);
-    g_asyncTaskRunning = false;
     g_asyncTaskQueue.clear();
 }
 
 static bool StartAsyncTaskWorker() {
     std::lock_guard<std::mutex> lock(g_asyncTasksMtx);
+
+    // StopAsyncTaskWorker waits on a snapshot of g_asyncTaskThread without
+    // holding this mutex. While producers are paused, don't reap that handle or
+    // create a replacement: closing a handle while another thread is waiting
+    // on it is undefined, and closing the replacement after the old wait
+    // completes would terminate the wrong worker lifecycle.
+    if (!g_acceptAsyncTasks ||
+        g_unloading.load(std::memory_order_acquire)) {
+        return false;
+    }
+
     if (g_asyncTaskThread) {
-        if (WaitForSingleObject(g_asyncTaskThread, 0) == WAIT_TIMEOUT) {
-            return true;
+        DWORD threadState = WaitForSingleObject(g_asyncTaskThread, 0);
+        if (threadState == WAIT_TIMEOUT) {
+            // A stop-signalled worker is committed to exiting. Never accept
+            // new work into it; a later QueueAsyncTask call will reap it and
+            // create a fresh worker after the thread has actually stopped.
+            bool stopRequested = g_asyncTaskStopEvent &&
+                WaitForSingleObject(g_asyncTaskStopEvent, 0) ==
+                    WAIT_OBJECT_0;
+            return !stopRequested;
+        }
+        if (threadState != WAIT_OBJECT_0) {
+            Wh_Log(L"Background worker state check failed (%u)",
+                   GetLastError());
+            return false;
         }
         CloseAsyncTaskWorkerHandlesLocked();
     }
 
     g_asyncTaskAvailableEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     g_asyncTaskStopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    g_asyncTaskIdleEvent = CreateEventW(nullptr, TRUE, TRUE, nullptr);
-    if (!g_asyncTaskAvailableEvent || !g_asyncTaskStopEvent ||
-        !g_asyncTaskIdleEvent) {
+    if (!g_asyncTaskAvailableEvent || !g_asyncTaskStopEvent) {
         CloseAsyncTaskWorkerHandlesLocked();
         return false;
     }
@@ -1773,7 +1774,6 @@ static bool QueueAsyncTask(std::function<void()> task) {
     } catch (...) {
         return false;
     }
-    UpdateAsyncTaskIdleEventLocked();
     SetEvent(g_asyncTaskAvailableEvent);
     return true;
 }
@@ -1785,13 +1785,29 @@ static void PauseAsyncTasks(bool discardPending = false) {
         g_asyncTaskQueue.clear();
         if (g_asyncTaskAvailableEvent) ResetEvent(g_asyncTaskAvailableEvent);
     }
-    UpdateAsyncTaskIdleEventLocked();
 }
 
 static void ResumeAsyncTasks() {
-    if (g_unloading || !StartAsyncTaskWorker()) return;
+    if (g_unloading) return;
+
+    // Mark the producer side resumed first. If the previous worker is still
+    // finishing after a bounded stop timeout, StartAsyncTaskWorker refuses to
+    // reuse its signalled stop event. The next producer call then reaps the
+    // exited handle and starts a fresh worker instead of queueing work that the
+    // dying worker would silently discard.
+    {
+        std::lock_guard<std::mutex> lock(g_asyncTasksMtx);
+        g_acceptAsyncTasks = true;
+    }
+
+    if (!StartAsyncTaskWorker()) {
+        Wh_Log(
+            L"Background worker is still stopping; the next task will retry "
+            L"worker startup");
+        return;
+    }
+
     std::lock_guard<std::mutex> lock(g_asyncTasksMtx);
-    g_acceptAsyncTasks = true;
     if (!g_asyncTaskQueue.empty() && g_asyncTaskAvailableEvent) {
         SetEvent(g_asyncTaskAvailableEvent);
     }
@@ -1841,14 +1857,30 @@ static void CancelAsyncTaskWorkerCall() {
     }
 }
 
-static bool WaitForAsyncTasks(DWORD timeoutMs) {
-    HANDLE idleEvent = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(g_asyncTasksMtx);
-        UpdateAsyncTaskIdleEventLocked();
-        idleEvent = g_asyncTaskIdleEvent;
+static bool WaitForThreadExitWithComCancellation(
+    HANDLE thread,
+    const std::atomic<DWORD>& threadId,
+    DWORD timeoutMs) {
+    if (!thread) return true;
+
+    const ULONGLONG deadline = GetTickCount64() + timeoutMs;
+    while (true) {
+        DWORD id = threadId.load(std::memory_order_acquire);
+        if (id) {
+            // Repeat cancellation until the thread exits. A single CoCancelCall
+            // can race with the worker entering its next outbound COM call.
+            CoCancelCall(id, 0);
+        }
+
+        ULONGLONG now = GetTickCount64();
+        if (now >= deadline) {
+            return WaitForSingleObject(thread, 0) == WAIT_OBJECT_0;
+        }
+
+        DWORD slice = static_cast<DWORD>(
+            std::min<ULONGLONG>(100, deadline - now));
+        if (WaitForThreadExit(thread, slice)) return true;
     }
-    return !idleEvent || WaitForThreadExit(idleEvent, timeoutMs);
 }
 
 static bool StopAsyncTaskWorker(DWORD timeoutMs = 3000) {
@@ -1857,13 +1889,13 @@ static bool StopAsyncTaskWorker(DWORD timeoutMs = 3000) {
         std::lock_guard<std::mutex> lock(g_asyncTasksMtx);
         g_acceptAsyncTasks = false;
         g_asyncTaskQueue.clear();
-        UpdateAsyncTaskIdleEventLocked();
         thread = g_asyncTaskThread;
         if (g_asyncTaskStopEvent) SetEvent(g_asyncTaskStopEvent);
         if (g_asyncTaskAvailableEvent) SetEvent(g_asyncTaskAvailableEvent);
     }
     CancelAsyncTaskWorkerCall();
-    bool stopped = !thread || WaitForThreadExit(thread, timeoutMs);
+    bool stopped = !thread || WaitForThreadExitWithComCancellation(
+        thread, g_asyncTaskThreadId, timeoutMs);
     if (stopped) {
         std::lock_guard<std::mutex> lock(g_asyncTasksMtx);
         CloseAsyncTaskWorkerHandlesLocked();
@@ -2551,6 +2583,9 @@ struct MediaState {
     std::wstring      artist;
     std::wstring      albumTitle;
     std::wstring      appUserModelId;
+    DWORD             processId = 0;
+    std::wstring      processPath;
+    ULONGLONG         processIdentityAttemptTick = 0;
     bool              isPlaying     = false;
     bool              playbackStateKnown = false;
     bool              hasMedia      = false;
@@ -2615,7 +2650,7 @@ static void CloseWorkerEventHandle(HANDLE& slot) {
     if (handle) CloseHandle(handle);
 }
 
-static void ReportOutstandingCallbackRisk(PCWSTR reason);
+static void LogOutstandingCleanupRisk(PCWSTR reason);
 
 // Discord's desktop Rich Presence RPC requires a registered application ID.
 // This is an original, minimal local IPC client: it publishes the current
@@ -2624,6 +2659,7 @@ static void ReportOutstandingCallbackRisk(PCWSTR reason);
 static HANDLE g_discordPresenceThread = nullptr;
 static HANDLE g_discordPresenceStopEvent = nullptr;
 static HANDLE g_discordPresenceUpdateEvent = nullptr;
+static std::mutex g_discordPresenceLifecycleMtx;
 static std::atomic<uint64_t> g_discordNonce{1};
 
 struct DiscordIpcHeader {
@@ -3050,9 +3086,15 @@ static void SignalDiscordPresenceUpdate() {
     SignalWorkerEventHandle(g_discordPresenceUpdateEvent);
 }
 
-static bool ReapStoppedDiscordPresenceThread() {
+static bool ReapStoppedDiscordPresenceThreadLocked() {
     if (!g_discordPresenceThread) return true;
-    if (WaitForSingleObject(g_discordPresenceThread, 0) != WAIT_OBJECT_0) {
+
+    DWORD threadState =
+        WaitForSingleObject(g_discordPresenceThread, 0);
+    if (threadState == WAIT_TIMEOUT) return false;
+    if (threadState != WAIT_OBJECT_0) {
+        Wh_Log(L"Discord presence: worker state check failed (%u)",
+               GetLastError());
         return false;
     }
 
@@ -3063,8 +3105,13 @@ static bool ReapStoppedDiscordPresenceThread() {
     return true;
 }
 
-static void StartDiscordPresenceThread() {
-    if (!ReapStoppedDiscordPresenceThread()) {
+static void StartDiscordPresenceThreadLocked() {
+    if (g_unloading.load(std::memory_order_acquire) ||
+        g_applyingSettings.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    if (!ReapStoppedDiscordPresenceThreadLocked()) {
         Wh_Log(L"Discord presence: previous worker is still stopping");
         return;
     }
@@ -3097,7 +3144,16 @@ static void StartDiscordPresenceThread() {
     }
 }
 
+static void StartDiscordPresenceThread() {
+    std::lock_guard<std::mutex> lifecycleLock(
+        g_discordPresenceLifecycleMtx);
+    StartDiscordPresenceThreadLocked();
+}
+
 static bool StopDiscordPresenceThread(bool shutdownCleanup = false) {
+    std::lock_guard<std::mutex> lifecycleLock(
+        g_discordPresenceLifecycleMtx);
+
     SignalWorkerEventHandle(g_discordPresenceStopEvent);
     if (g_discordPresenceThread) {
         constexpr DWORD timeoutMs = 3000;
@@ -3107,7 +3163,7 @@ static bool StopDiscordPresenceThread(bool shutdownCleanup = false) {
             if (shutdownCleanup) {
                 Wh_Log(
                     L"Discord presence: worker exceeded the unload deadline; "
-                    L"retaining the module if it remains active");
+                    L"continuing after bounded cleanup");
             } else {
                 Wh_Log(
                     L"Discord presence: worker didn't stop within the "
@@ -3116,7 +3172,44 @@ static bool StopDiscordPresenceThread(bool shutdownCleanup = false) {
             return false;
         }
     }
-    return ReapStoppedDiscordPresenceThread();
+    return ReapStoppedDiscordPresenceThreadLocked();
+}
+
+static void EnsureDiscordPresenceThreadRunning() {
+    if (g_unloading.load(std::memory_order_acquire) ||
+        g_applyingSettings.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lifecycleLock(
+        g_discordPresenceLifecycleMtx);
+    if (g_unloading.load(std::memory_order_acquire) ||
+        g_applyingSettings.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    if (g_discordPresenceThread) {
+        DWORD threadState =
+            WaitForSingleObject(g_discordPresenceThread, 0);
+        if (threadState == WAIT_TIMEOUT) return;
+        if (threadState != WAIT_OBJECT_0) {
+            Wh_Log(L"Discord presence: worker state check failed (%u)",
+                   GetLastError());
+            return;
+        }
+        if (!ReapStoppedDiscordPresenceThreadLocked()) return;
+    }
+
+    if (Cfg()->discordPresenceEnabled) {
+        StartDiscordPresenceThreadLocked();
+    }
+}
+
+static bool IsDiscordPresenceThreadRunning() {
+    std::lock_guard<std::mutex> lifecycleLock(
+        g_discordPresenceLifecycleMtx);
+    if (!g_discordPresenceThread) return false;
+    return WaitForSingleObject(g_discordPresenceThread, 0) == WAIT_TIMEOUT;
 }
 
 enum class RepeatMode {
@@ -3176,7 +3269,7 @@ static void RecordMediaEventUnsubscribeFailure(PCWSTR source) noexcept {
         Wh_Log(L"Media event cleanup failed for %ls",
                source ? source : L"an unknown source");
     }
-    ReportOutstandingCallbackRisk(
+    LogOutstandingCleanupRisk(
         source ? source : L"failed media event unsubscription");
 }
 
@@ -3184,6 +3277,7 @@ static HANDLE g_mediaThread    = nullptr;
 static std::atomic<DWORD> g_mediaThreadId{0};
 static HANDLE g_mediaStopEvent = nullptr;
 static HANDLE g_mediaRefreshEvent = nullptr;
+static std::mutex g_mediaThreadLifecycleMtx;
 
 static SRWLOCK g_mediaEventCallbackLock = SRWLOCK_INIT;
 static CONDITION_VARIABLE g_mediaEventCallbackChanged =
@@ -4529,7 +4623,9 @@ static bool KnownMediaPlayerProcessAlias(const std::wstring& appLower,
 
 static bool AudioSessionMatchesApp(IAudioSessionControl2* sessionControl2,
                                    const std::wstring& appUserModelId) {
-    if (!sessionControl2 || appUserModelId.empty()) return false;
+    if (!sessionControl2 || appUserModelId.empty() || g_unloading) {
+        return false;
+    }
 
     const std::wstring appLower = ToLowerCopy(appUserModelId);
     std::wstring appStem = ToLowerCopy(PathFileStem(appUserModelId));
@@ -4566,6 +4662,8 @@ static bool AudioSessionMatchesApp(IAudioSessionControl2* sessionControl2,
         }
     }
 
+    if (g_unloading) return false;
+
     // Session identifiers vary between desktop and packaged applications.
     // Accept the complete app identity, or a reasonably long stem delimited as
     // an identifier token. Avoid unrestricted substring matches such as "vlc"
@@ -4591,12 +4689,13 @@ static bool ForEachMatchingAudioSession(
     const std::wstring& appUserModelId,
     IMMDeviceEnumerator* deviceEnumerator,
     const std::function<void(IAudioSessionControl*, IAudioSessionControl2*)>& visitor) {
-    if (appUserModelId.empty()) return false;
+    if (appUserModelId.empty() || g_unloading) return false;
     winrt::com_ptr<IMMDeviceEnumerator> localDeviceEnumerator;
     if (!deviceEnumerator) {
         if (FAILED(CoCreateInstance(XIID_MMDeviceEnumerator, nullptr, CLSCTX_INPROC_SERVER,
                                     XIID_IMMDeviceEnumerator,
-                                    localDeviceEnumerator.put_void()))) {
+                                    localDeviceEnumerator.put_void())) ||
+            g_unloading) {
             return false;
         }
         deviceEnumerator = localDeviceEnumerator.get();
@@ -4607,12 +4706,13 @@ static bool ForEachMatchingAudioSession(
     winrt::com_ptr<IMMDeviceCollection> devices;
     HRESULT hr = deviceEnumerator->EnumAudioEndpoints(
         eRender, DEVICE_STATE_ACTIVE, devices.put());
-    if (FAILED(hr) || !devices) return false;
+    if (FAILED(hr) || !devices || g_unloading) return false;
 
     UINT deviceCount = 0;
     if (FAILED(devices->GetCount(&deviceCount))) return false;
 
     for (UINT deviceIndex = 0; deviceIndex < deviceCount; ++deviceIndex) {
+        if (g_unloading) return found;
         winrt::com_ptr<IMMDevice> device;
         if (FAILED(devices->Item(deviceIndex, device.put())) || !device) continue;
 
@@ -4633,6 +4733,7 @@ static bool ForEachMatchingAudioSession(
         if (FAILED(sessionEnumerator->GetCount(&sessionCount))) continue;
 
         for (int sessionIndex = 0; sessionIndex < sessionCount; ++sessionIndex) {
+            if (g_unloading) return found;
             winrt::com_ptr<IAudioSessionControl> sessionControl;
             if (FAILED(sessionEnumerator->GetSession(sessionIndex,
                                                      sessionControl.put())) ||
@@ -4647,14 +4748,93 @@ static bool ForEachMatchingAudioSession(
                 continue;
             }
 
+            if (g_unloading) return found;
             if (AudioSessionMatchesApp(sessionControl2.get(), appUserModelId)) {
                 found = true;
                 visitor(sessionControl.get(), sessionControl2.get());
+                if (g_unloading) return found;
             }
         }
     }
 
     return found;
+}
+
+struct MediaProcessIdentity {
+    DWORD processId = 0;
+    std::wstring processPath;
+};
+
+static bool IsProcessIdAlive(DWORD processId) {
+    if (!processId) return false;
+    HANDLE process = OpenProcess(
+        PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, processId);
+    if (!process) return false;
+    bool alive = WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
+    CloseHandle(process);
+    return alive;
+}
+
+static bool CachedMediaProcessIdentityMatches(
+    DWORD processId,
+    const std::wstring& cachedProcessPath,
+    const std::wstring& appUserModelId) {
+    if (!processId || g_unloading.load(std::memory_order_acquire)) {
+        return false;
+    }
+
+    HANDLE process = OpenProcess(
+        PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
+        FALSE, processId);
+    if (!process) return false;
+
+    bool alive = WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
+    std::wstring currentPath;
+    std::wstring currentAumid;
+    if (alive) {
+        currentPath = QueryProcessImagePath(process);
+        currentAumid = ProcessApplicationUserModelId(process);
+    }
+    CloseHandle(process);
+    if (!alive) return false;
+
+    if (!cachedProcessPath.empty() && !currentPath.empty() &&
+        _wcsicmp(cachedProcessPath.c_str(), currentPath.c_str()) == 0) {
+        return true;
+    }
+    if (!appUserModelId.empty() &&
+        SamePackagedAppIdentity(appUserModelId, currentAumid)) {
+        return true;
+    }
+    return false;
+}
+
+static MediaProcessIdentity ResolveMediaProcessIdentity(
+    const std::wstring& appUserModelId) {
+    MediaProcessIdentity identity;
+    if (appUserModelId.empty() || g_unloading) return identity;
+
+    ForEachMatchingAudioSession(
+        appUserModelId, nullptr,
+        [&](IAudioSessionControl*, IAudioSessionControl2* sessionControl2) {
+            if (identity.processId || !sessionControl2 || g_unloading) return;
+
+            DWORD processId = 0;
+            if (FAILED(sessionControl2->GetProcessId(&processId)) ||
+                !processId) {
+                return;
+            }
+
+            HANDLE process = OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
+            if (!process) return;
+
+            identity.processId = processId;
+            identity.processPath = QueryProcessImagePath(process);
+            CloseHandle(process);
+        });
+
+    return identity;
 }
 
 static bool GetAppVolumeStateByAUMID(
@@ -4711,6 +4891,142 @@ static bool SetAppVolumeStateByAUMID(
 static std::wstring GetWindowAppUserModelId(HWND hWnd);
 static void ShowMediaContextMenu(FrameworkElement const& target);
 
+static HWND FindVisibleMediaWindowForProcess(DWORD processId) {
+    if (!processId) return nullptr;
+
+    struct SearchContext {
+        DWORD processId = 0;
+        HWND window = nullptr;
+    } context{processId, nullptr};
+
+    EnumWindows([](HWND window, LPARAM parameter) CALLBACK -> BOOL {
+        auto* context = reinterpret_cast<SearchContext*>(parameter);
+        if (!context || g_unloading) return FALSE;
+        if (!IsWindowVisible(window)) return TRUE;
+
+        DWORD windowProcessId = 0;
+        GetWindowThreadProcessId(window, &windowProcessId);
+        if (windowProcessId != context->processId) return TRUE;
+
+        LONG_PTR style = GetWindowLongPtrW(window, GWL_STYLE);
+        LONG_PTR extendedStyle = GetWindowLongPtrW(window, GWL_EXSTYLE);
+        if ((style & WS_CHILD) || (extendedStyle & WS_EX_TOOLWINDOW)) {
+            return TRUE;
+        }
+
+        BOOL cloaked = FALSE;
+        if (SUCCEEDED(DwmGetWindowAttribute(
+                window, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))) &&
+            cloaked) {
+            return TRUE;
+        }
+
+        context->window = window;
+        return FALSE;
+    }, reinterpret_cast<LPARAM>(&context));
+
+    return context.window;
+}
+
+static bool ActivateMediaProcessWindow(DWORD processId) {
+    HWND targetWindow = FindVisibleMediaWindowForProcess(processId);
+    if (!targetWindow || g_unloading) return false;
+
+    if (IsIconic(targetWindow)) {
+        ShowWindowAsync(targetWindow, SW_RESTORE);
+    }
+
+    HWND foregroundWindow = GetForegroundWindow();
+    DWORD currentThreadId = GetCurrentThreadId();
+    DWORD foregroundThreadId = foregroundWindow
+        ? GetWindowThreadProcessId(foregroundWindow, nullptr)
+        : 0;
+    bool attached = foregroundThreadId &&
+        foregroundThreadId != currentThreadId &&
+        AttachThreadInput(currentThreadId, foregroundThreadId, TRUE);
+
+    SetForegroundWindow(targetWindow);
+    BringWindowToTop(targetWindow);
+
+    if (attached) {
+        AttachThreadInput(currentThreadId, foregroundThreadId, FALSE);
+    }
+    return true;
+}
+
+static std::wstring ResolveLaunchableProcessPath(
+    const std::wstring& cachedProcessPath,
+    const std::wstring& appUserModelId) {
+    if (!cachedProcessPath.empty() &&
+        GetFileAttributesW(cachedProcessPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        return cachedProcessPath;
+    }
+
+    if (appUserModelId.empty() ||
+        appUserModelId.find_first_of(L"\\/!") != std::wstring::npos) {
+        return {};
+    }
+
+    std::vector<wchar_t> resolved(32768);
+    DWORD written = SearchPathW(
+        nullptr, appUserModelId.c_str(), nullptr,
+        static_cast<DWORD>(resolved.size()), resolved.data(), nullptr);
+    if (!written || written >= resolved.size()) return {};
+    return std::wstring(resolved.data(), written);
+}
+
+static bool LaunchMediaApplication(
+    const std::wstring& appUserModelId,
+    const std::wstring& cachedProcessPath) {
+    if (g_unloading) return false;
+
+    std::wstring applicationName =
+        ResolveLaunchableProcessPath(cachedProcessPath, appUserModelId);
+    std::wstring commandLine;
+    std::wstring workingDirectory;
+
+    if (!applicationName.empty()) {
+        commandLine = L"\"" + applicationName + L"\"";
+        size_t separator = applicationName.find_last_of(L"\\/");
+        if (separator != std::wstring::npos) {
+            workingDirectory = applicationName.substr(0, separator);
+        }
+    } else if (!appUserModelId.empty()) {
+        wchar_t windowsDirectory[MAX_PATH]{};
+        UINT length = GetWindowsDirectoryW(
+            windowsDirectory, ARRAYSIZE(windowsDirectory));
+        if (!length || length >= ARRAYSIZE(windowsDirectory)) return false;
+
+        applicationName.assign(windowsDirectory, length);
+        if (!applicationName.empty() &&
+            applicationName.back() != L'\\') {
+            applicationName.push_back(L'\\');
+        }
+        applicationName += L"explorer.exe";
+        commandLine = L"\"" + applicationName +
+            L"\" \"shell:AppsFolder\\" + appUserModelId + L"\"";
+    } else {
+        return false;
+    }
+
+    if (g_unloading) return false;
+
+    STARTUPINFOW startupInfo{};
+    startupInfo.cb = sizeof(startupInfo);
+    PROCESS_INFORMATION processInfo{};
+    BOOL created = CreateProcessW(
+        applicationName.c_str(), commandLine.data(),
+        nullptr, nullptr, FALSE, CREATE_UNICODE_ENVIRONMENT,
+        nullptr,
+        workingDirectory.empty() ? nullptr : workingDirectory.c_str(),
+        &startupInfo, &processInfo);
+    if (!created) return false;
+
+    CloseHandle(processInfo.hThread);
+    CloseHandle(processInfo.hProcess);
+    return true;
+}
+
 static void ExecuteMediaAction(const std::wstring& action, FrameworkElement const& sourceElement = nullptr) {
     if (action == L"none") {
         return;
@@ -4741,161 +5057,35 @@ static void ExecuteMediaAction(const std::wstring& action, FrameworkElement cons
         SendMediaCommandAsync(8);
         DispatchMediaUpdate();
     } else if (action == L"open_app") {
-        bool queued = QueueAsyncTask([]() {
-            HRESULT apartmentResult =
-                CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-            struct ApartmentCleanup {
-                HRESULT result;
-                ~ApartmentCleanup() {
-                    if (SUCCEEDED(result)) CoUninitialize();
-                }
-            } apartmentCleanup{apartmentResult};
-            bool comAvailable =
-                SUCCEEDED(apartmentResult) ||
-                apartmentResult == RPC_E_CHANGED_MODE;
-            if (!comAvailable) {
-                Wh_Log(L"Open-media-app action: COM initialization failed "
-                       L"(0x%08X)", apartmentResult);
-            }
+        std::wstring appUserModelId;
+        std::wstring processPath;
+        DWORD processId = 0;
+        {
+            std::lock_guard<std::mutex> lock(g_mediaMtx);
+            appUserModelId = g_media.appUserModelId;
+            processId = g_media.processId;
+            processPath = g_media.processPath;
+        }
 
-            std::wstring appAumid;
-            {
-                std::lock_guard<std::mutex> lk(g_sessionMtx);
-                if (g_currentSession) {
-                    try {
-                        appAumid = std::wstring(g_currentSession.SourceAppUserModelId());
-                    } catch (...) {}
-                }
-            }
+        bool queued = QueueAsyncTask(
+            [appUserModelId = std::move(appUserModelId),
+             processPath = std::move(processPath),
+             processId]() {
+                if (g_unloading) return;
 
-            struct WindowSearch {
-                std::wstring targetAumid;
-                std::set<DWORD> matchingProcessIds;
-                bool comAvailable = false;
-                HWND aumidHwnd = nullptr;
-                HWND processHwnd = nullptr;
-            };
-            WindowSearch search;
-            search.comAvailable = comAvailable;
-            search.targetAumid = ToLowerCopy(appAumid);
-
-            // Reuse the strict audio-session identity matcher to resolve the
-            // process IDs that actually belong to the selected media source.
-            // This avoids foregrounding an unrelated process merely because a
-            // short executable name appears inside an AUMID.
-            if (!appAumid.empty()) {
-                ForEachMatchingAudioSession(
-                    appAumid, nullptr,
-                    [&](IAudioSessionControl*,
-                        IAudioSessionControl2* sessionControl2) {
-                        DWORD processId = 0;
-                        if (sessionControl2 &&
-                            SUCCEEDED(sessionControl2->GetProcessId(&processId)) &&
-                            processId) {
-                            search.matchingProcessIds.insert(processId);
-                        }
-                    });
-            }
-
-            EnumWindows([](HWND hwnd, LPARAM lParam) CALLBACK -> BOOL {
-                if (!IsWindowVisible(hwnd)) return TRUE;
-                WINDOWINFO wi{};
-                wi.cbSize = sizeof(wi);
-                if (!GetWindowInfo(hwnd, &wi)) return TRUE;
-                if ((wi.dwStyle & WS_CHILD) != 0 ||
-                    (wi.dwExStyle & WS_EX_TOOLWINDOW) != 0) {
-                    return TRUE;
+                if (CachedMediaProcessIdentityMatches(
+                        processId, processPath, appUserModelId) &&
+                    ActivateMediaProcessWindow(processId)) {
+                    return;
                 }
 
-                auto* s = reinterpret_cast<WindowSearch*>(lParam);
-
-                if (s->comAvailable && !s->aumidHwnd &&
-                    !s->targetAumid.empty()) {
-                    IPropertyStore* pps = nullptr;
-                    if (SUCCEEDED(SHGetPropertyStoreForWindow(
-                            hwnd, IID_PPV_ARGS(&pps))) && pps) {
-                        PROPVARIANT var;
-                        PropVariantInit(&var);
-                        if (SUCCEEDED(pps->GetValue(
-                                PKEY_AppUserModel_ID, &var)) &&
-                            var.vt == VT_LPWSTR && var.pwszVal &&
-                            SamePackagedAppIdentity(
-                                s->targetAumid, var.pwszVal)) {
-                            s->aumidHwnd = hwnd;
-                        }
-                        PropVariantClear(&var);
-                        pps->Release();
-                    }
+                if (g_unloading) return;
+                if (!LaunchMediaApplication(appUserModelId, processPath)) {
+                    Wh_Log(
+                        L"Open-media-app action couldn't activate or launch "
+                        L"the selected player");
                 }
-
-                if (!s->processHwnd && !s->targetAumid.empty()) {
-                    DWORD pid = 0;
-                    GetWindowThreadProcessId(hwnd, &pid);
-                    if (!pid) return TRUE;
-
-                    if (s->matchingProcessIds.find(pid) !=
-                        s->matchingProcessIds.end()) {
-                        s->processHwnd = hwnd;
-                        return TRUE;
-                    }
-
-                    // Some players don't expose a normal audio session. Keep a
-                    // conservative process-name fallback, but require a proper
-                    // identifier token or a known explicit alias. Short loose
-                    // substring matches such as "vlc", "mpc", or "tv" are
-                    // intentionally rejected.
-                    const std::wstring processPath = [&]() {
-                        HANDLE process = OpenProcess(
-                            PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-                        if (!process) return std::wstring{};
-                        std::wstring path = QueryProcessImagePath(process);
-                        CloseHandle(process);
-                        return path;
-                    }();
-                    const std::wstring processStem =
-                        ToLowerCopy(PathFileStem(processPath));
-                    if (!processStem.empty() &&
-                        (KnownMediaPlayerProcessAlias(
-                             s->targetAumid, processStem) ||
-                         (s->targetAumid.size() >= 8 &&
-                          ContainsIdentifierToken(
-                              s->targetAumid, processStem)))) {
-                        s->processHwnd = hwnd;
-                    }
-                }
-
-                return TRUE;
-            }, reinterpret_cast<LPARAM>(&search));
-
-            HWND targetWindow =
-                search.aumidHwnd ? search.aumidHwnd : search.processHwnd;
-
-            if (targetWindow) {
-                if (IsIconic(targetWindow)) {
-                    ShowWindow(targetWindow, SW_RESTORE);
-                }
-
-                HWND hCurWnd = GetForegroundWindow();
-                if (hCurWnd && hCurWnd != targetWindow) {
-                    DWORD dwMyID = GetCurrentThreadId();
-                    DWORD dwCurID = GetWindowThreadProcessId(hCurWnd, NULL);
-                    AttachThreadInput(dwCurID, dwMyID, TRUE);
-                    SetForegroundWindow(targetWindow);
-                    BringWindowToTop(targetWindow);
-                    AttachThreadInput(dwCurID, dwMyID, FALSE);
-                } else {
-                    SetForegroundWindow(targetWindow);
-                    BringWindowToTop(targetWindow);
-                }
-                return;
-            }
-
-            if (!appAumid.empty()) {
-                std::wstring shellPath = L"shell:AppsFolder\\" + appAumid;
-                ShellExecuteW(nullptr, L"open", shellPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-            }
-
-        });
+            });
         if (!queued) {
             Wh_Log(L"Open-media-app action couldn't be queued");
         }
@@ -5039,45 +5229,11 @@ static void ApplyVolumePopupDpiLayout(HWND window, UINT dpi) {
     if (window) InvalidateRect(window, nullptr, TRUE);
 }
 
-static std::atomic<bool> g_moduleSafetyPinned{false};
-static HMODULE g_moduleSafetyPinHandle = nullptr;
-
-static void RetainModuleForSafety(PCWSTR reason) {
-    bool expected = false;
-    if (!g_moduleSafetyPinned.compare_exchange_strong(
-            expected, true, std::memory_order_acq_rel)) {
-        return;
-    }
-
-    HMODULE module = nullptr;
-    if (GetModuleHandleExW(
-            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
-            reinterpret_cast<LPCWSTR>(&RetainModuleForSafety),
-            &module) && module) {
-        g_moduleSafetyPinHandle = module;
-        Wh_Log(
-            L"Lifecycle safety: cleanup left %ls; retaining the module until "
-            L"Explorer restarts instead of hanging or unloading live code",
-            reason ? reason : L"an outstanding callback");
-        return;
-    }
-
-    g_moduleSafetyPinned.store(false, std::memory_order_release);
+static void LogOutstandingCleanupRisk(PCWSTR reason) {
     Wh_Log(
-        L"Lifecycle safety: cleanup left %ls and the emergency module "
-        L"retention failed",
+        L"Lifecycle safety: bounded cleanup ended with %ls; continuing with "
+        L"Windhawk-owned module lifetime",
         reason ? reason : L"an outstanding callback");
-}
-
-static void ReportOutstandingCallbackRisk(PCWSTR reason) {
-    if (g_unloading.load(std::memory_order_acquire)) {
-        RetainModuleForSafety(reason);
-    } else {
-        Wh_Log(
-            L"Lifecycle safety: cleanup left %ls; the module will be retained "
-            L"if the condition is still present during unload",
-            reason ? reason : L"an outstanding callback");
-    }
 }
 
 static std::wstring CurrentMediaAppUserModelId() {
@@ -5995,10 +6151,10 @@ static void ShowAppVolumeFlyout(FrameworkElement const& target) {
     ShowWindow(popupWindow, SW_SHOWNOACTIVATE);
     SetWindowPos(popupWindow, HWND_TOPMOST, x, y, popupWidth, popupHeight,
                  SWP_SHOWWINDOW | SWP_NOACTIVATE);
-    SetCapture(popupWindow);
-    if (GetCapture() != popupWindow) {
-        Wh_Log(L"Volume popup: mouse capture couldn't be acquired");
-    }
+    // Don't take mouse capture while the XAML Button is still completing its
+    // Click event. XAML can change capture as the pointer is released, which
+    // sends WM_CAPTURECHANGED and used to close this popup immediately. The
+    // popup acquires capture only after a drag starts in WM_LBUTTONDOWN.
 }
 
 static std::wstring TrimCopy(std::wstring value) {
@@ -6237,12 +6393,17 @@ static std::vector<BYTE> FetchAppIconBytes(const std::wstring& appUserModelId, i
         ctx.aumid = &appUserModelId;
 
         EnumWindows([](HWND hWnd, LPARAM lParam) CALLBACK -> BOOL {
+            if (g_unloading) return FALSE;
             if (!IsWindowVisible(hWnd)) return TRUE;
             auto* c = reinterpret_cast<EnumCtx*>(lParam);
 
             if (!c->exactIcon) {
                 IPropertyStore* pps = nullptr;
                 if (SUCCEEDED(SHGetPropertyStoreForWindow(hWnd, IID_PPV_ARGS(&pps)))) {
+                    if (g_unloading) {
+                        pps->Release();
+                        return FALSE;
+                    }
                     PROPVARIANT var;
                     PropVariantInit(&var);
                     if (SUCCEEDED(pps->GetValue(PKEY_AppUserModel_ID, &var)) && var.vt == VT_LPWSTR) {
@@ -6536,6 +6697,9 @@ static void FetchMediaPropertiesAsync() {
             std::wstring oldTitle;
             std::wstring oldArtist;
             std::wstring oldAumid;
+            DWORD oldProcessId = 0;
+            std::wstring oldProcessPath;
+            ULONGLONG oldProcessIdentityAttemptTick = 0;
             std::vector<BYTE> oldThumbnailBytes;
             std::vector<BYTE> oldAppIconBytes;
             std::wstring oldAppIconKey;
@@ -6545,6 +6709,10 @@ static void FetchMediaPropertiesAsync() {
                 oldTitle = g_media.title;
                 oldArtist = g_media.artist;
                 oldAumid = g_media.appUserModelId;
+                oldProcessId = g_media.processId;
+                oldProcessPath = g_media.processPath;
+                oldProcessIdentityAttemptTick =
+                    g_media.processIdentityAttemptTick;
                 oldThumbnailBytes = g_media.thumbnailBytes;
                 oldAppIconBytes = g_media.appIconBytes;
                 oldAppIconKey = g_media.appIconKey;
@@ -6554,6 +6722,24 @@ static void FetchMediaPropertiesAsync() {
             {
                 std::lock_guard<std::mutex> lock(g_sessionMtx);
                 forceIconRefresh = g_userSwitchedSession;
+            }
+
+            MediaProcessIdentity processIdentity{
+                oldProcessId, oldProcessPath};
+            ULONGLONG processIdentityAttemptTick =
+                oldProcessIdentityAttemptTick;
+            ULONGLONG nowTick = GetTickCount64();
+            bool processIdentityStale =
+                !oldProcessIdentityAttemptTick ||
+                nowTick - oldProcessIdentityAttemptTick >= 10000 ||
+                !IsProcessIdAlive(oldProcessId);
+            if (oldAumid != aumid || processIdentityStale) {
+                processIdentity = ResolveMediaProcessIdentity(aumid);
+                processIdentityAttemptTick = nowTick;
+            }
+
+            if (!IsCurrentMediaSession(session, generation) || g_unloading) {
+                return;
             }
 
             bool transitionActive = MediaVisualTransitionActive();
@@ -6606,6 +6792,10 @@ static void FetchMediaPropertiesAsync() {
                     g_media.hasMedia = hasMedia;
                     g_media.appUserModelId = aumid;
                 }
+                g_media.processId = processIdentity.processId;
+                g_media.processPath = std::move(processIdentity.processPath);
+                g_media.processIdentityAttemptTick =
+                    processIdentityAttemptTick;
 
                 if (!thumbBytes.empty()) {
                     g_media.thumbnailBytes = std::move(thumbBytes);
@@ -6936,6 +7126,12 @@ static GlobalSystemMediaTransportControlsSession PickBestSession() {
                     currentPlaying = playing;
                 }
             } catch (...) {
+                if (currentSession && session == currentSession) {
+                    // The manager successfully confirmed that the session is
+                    // still present. A transient property/playback read must
+                    // not turn that into a detach.
+                    currentAvailable = session;
+                }
                 Wh_Log(L"PickBestSession: Exception processing session %d",
                        index);
             }
@@ -6992,8 +7188,12 @@ static GlobalSystemMediaTransportControlsSession PickBestSession() {
         Wh_Log(L"PickBestSession: No suitable session found");
         return nullptr;
     } catch (...) {
-        Wh_Log(L"PickBestSession: Exception occurred");
-        return nullptr;
+        // A transient GSMTC broker failure is not proof that the selected
+        // session disappeared. Preserve it until a successful enumeration
+        // confirms that it is gone; otherwise one failed refresh collapses the
+        // widget until the media application happens to publish another event.
+        Wh_Log(L"PickBestSession: enumeration failed; keeping current session");
+        return currentSession;
     }
 }
 
@@ -7305,6 +7505,7 @@ static DWORD MediaThreadMain() {
         g_evSessionsChanged = {};
         g_evCurrentChanged = {};
         bool managerReady = false;
+        bool brokerFailed = false;
 
         try {
             Wh_Log(L"MediaThreadProc: Requesting session manager");
@@ -7350,17 +7551,19 @@ static DWORD MediaThreadMain() {
                 HANDLE handles[] = {
                     stopEvent, refreshEvent};
                 DWORD waitResult = WaitForMultipleObjects(
-                    ARRAYSIZE(handles), handles, FALSE, 30000);
+                    ARRAYSIZE(handles), handles, FALSE, 10000);
                 if (waitResult == WAIT_OBJECT_0) break;
                 if (waitResult == WAIT_OBJECT_0 + 1) {
                     OnSessionsChanged();
                 } else if (waitResult == WAIT_TIMEOUT) {
-                    // Events drive all normal session and metadata updates.
-                    // A low-frequency, metadata-free broker call only verifies
-                    // that the WinRT broker is still alive; failure falls into
-                    // the reconnect path below.
+                    // Events drive normal updates, but applications and the
+                    // GSMTC broker can occasionally miss one. Reconcile the
+                    // selected session and refetch its playback/metadata so a
+                    // stale hidden widget recovers without waiting for the next
+                    // track or another unrelated session event.
                     auto sessions = manager.GetSessions();
                     (void)sessions.Size();
+                    OnSessionsChanged();
                 }
                 if (waitResult == WAIT_FAILED) {
                     throw winrt::hresult_error(
@@ -7368,9 +7571,11 @@ static DWORD MediaThreadMain() {
                 }
             }
         } catch (const winrt::hresult_error& error) {
+            brokerFailed = true;
             Wh_Log(L"MediaThreadProc: broker/session failure 0x%08X",
                    static_cast<uint32_t>(error.code()));
         } catch (...) {
+            brokerFailed = true;
             Wh_Log(L"MediaThreadProc: transient session-manager failure");
         }
 
@@ -7401,16 +7606,26 @@ static DWORD MediaThreadMain() {
         g_evSessionsChanged = {};
         g_evCurrentChanged = {};
         ArmMediaVisualTransition();
-        DetachCurrentSession();
-        g_scrollResetRequested = true;
-        DispatchMediaUpdate();
+        bool stopping = g_unloading ||
+            WaitForSingleObject(stopEvent, 0) == WAIT_OBJECT_0;
+        if (brokerFailed && !stopping) {
+            // The broker is being replaced, but that alone doesn't mean the
+            // application's session or its last valid media state disappeared.
+            // Keep both visible while the retry loop obtains a fresh manager;
+            // the next successful enumeration will detach only if the session
+            // is genuinely absent.
+            Wh_Log(L"MediaThreadProc: preserving current session during broker reconnect");
+        } else {
+            DetachCurrentSession();
+            g_scrollResetRequested = true;
+            DispatchMediaUpdate();
+        }
         {
             std::lock_guard<std::mutex> lock(g_sessionMtx);
             g_sessionMgr = nullptr;
         }
 
-        if (g_unloading ||
-            WaitForSingleObject(stopEvent, 0) == WAIT_OBJECT_0) {
+        if (stopping) {
             break;
         }
         Wh_Log(L"MediaThreadProc: retrying broker in %u ms",
@@ -7441,8 +7656,41 @@ static DWORD WINAPI MediaThreadProc(void*) noexcept {
     return result;
 }
 
-static void StartMediaThread() {
-    if (g_mediaThread) return;
+static bool ReapStoppedMediaThreadLocked() {
+    if (!g_mediaThread) return true;
+
+    DWORD threadState = WaitForSingleObject(g_mediaThread, 0);
+    if (threadState == WAIT_TIMEOUT) return false;
+    if (threadState != WAIT_OBJECT_0) {
+        Wh_Log(L"Media thread state check failed (%u)", GetLastError());
+        return false;
+    }
+
+    CloseHandle(g_mediaThread);
+    g_mediaThread = nullptr;
+    CloseWorkerEventHandle(g_mediaStopEvent);
+    CloseWorkerEventHandle(g_mediaRefreshEvent);
+    return true;
+}
+
+static bool StartMediaThread() {
+    std::lock_guard<std::mutex> lifecycleLock(
+        g_mediaThreadLifecycleMtx);
+
+    if (g_unloading.load(std::memory_order_acquire)) return false;
+
+    if (g_mediaThread) {
+        DWORD threadState = WaitForSingleObject(g_mediaThread, 0);
+        if (threadState == WAIT_TIMEOUT) {
+            HANDLE stopEvent =
+                SnapshotWorkerEventHandle(g_mediaStopEvent);
+            bool stopRequested = stopEvent &&
+                WaitForSingleObject(stopEvent, 0) == WAIT_OBJECT_0;
+            return !stopRequested;
+        }
+        if (!ReapStoppedMediaThreadLocked()) return false;
+    }
+
     bool stopEventCreated =
         CreateWorkerEventHandle(g_mediaStopEvent, true, false);
     bool refreshEventCreated =
@@ -7450,15 +7698,20 @@ static void StartMediaThread() {
     if (!stopEventCreated || !refreshEventCreated) {
         CloseWorkerEventHandle(g_mediaStopEvent);
         CloseWorkerEventHandle(g_mediaRefreshEvent);
-        return;
+        return false;
     }
-    g_mediaThread = CreateThread(nullptr, 0, MediaThreadProc, nullptr, 0, nullptr);
+    g_mediaThread =
+        CreateThread(nullptr, 0, MediaThreadProc, nullptr, 0, nullptr);
     if (!g_mediaThread) {
         CloseWorkerEventHandle(g_mediaStopEvent);
         CloseWorkerEventHandle(g_mediaRefreshEvent);
+        return false;
     }
+    return true;
 }
 static bool StopMediaThread(bool shutdownCleanup = false) {
+    std::lock_guard<std::mutex> lifecycleLock(
+        g_mediaThreadLifecycleMtx);
     SignalWorkerEventHandle(g_mediaStopEvent);
     DWORD mediaThreadId =
         g_mediaThreadId.load(std::memory_order_acquire);
@@ -7467,12 +7720,13 @@ static bool StopMediaThread(bool shutdownCleanup = false) {
     bool threadStopped = true;
     constexpr DWORD timeoutMs = 5000;
     if (g_mediaThread) {
-        threadStopped = WaitForThreadExit(g_mediaThread, timeoutMs);
+        threadStopped = WaitForThreadExitWithComCancellation(
+            g_mediaThread, g_mediaThreadId, timeoutMs);
         if (!threadStopped) {
             if (shutdownCleanup) {
                 Wh_Log(
-                    L"Media thread exceeded the unload deadline; retaining "
-                    L"the module if it remains active");
+                    L"Media thread exceeded the unload deadline; "
+                    L"continuing after bounded cleanup");
             } else {
                 Wh_Log(
                     L"Media thread didn't stop within the "
@@ -7508,6 +7762,7 @@ static HANDLE g_timerThread    = nullptr;
 static std::atomic<DWORD> g_timerThreadId{0};
 static HANDLE g_timerStopEvent = nullptr;
 static HANDLE g_timerUpdateEvent = nullptr;
+static std::mutex g_timerThreadLifecycleMtx;
 
 [[clang::no_destroy]] static winrt::Windows::UI::Xaml::DispatcherTimer g_scrollDispatcherTimer{nullptr};
 static winrt::event_token                        g_scrollDispatcherTimerToken{};
@@ -8031,7 +8286,7 @@ struct TaskbarTopologyNotificationWindow {
         Wh_Log(
             L"Taskbar topology notifications: class unregister failed (%u)",
             error);
-        ReportOutstandingCallbackRisk(
+        LogOutstandingCleanupRisk(
             L"the taskbar topology notification window class registered");
     }
 
@@ -8205,6 +8460,12 @@ static DWORD TimerThreadMain() {
 
         if (wait == WAIT_OBJECT_0 + stopIndex || g_unloading) break;
         if (g_applyingSettings) continue;
+
+        // Reap workers that finished just after a bounded settings-change
+        // deadline. This turns a transient stop delay into a one-cycle pause,
+        // not a permanently stale widget.
+        StartMediaThread();
+        EnsureDiscordPresenceThreadRunning();
 
         ULONGLONG nowTick = GetTickCount64();
 
@@ -8450,8 +8711,41 @@ static DWORD WINAPI TimerThreadProc(void*) noexcept {
     return result;
 }
 
-static void StartTimerThread() {
-    if (g_timerThread) return;
+static bool ReapStoppedTimerThreadLocked() {
+    if (!g_timerThread) return true;
+
+    DWORD threadState = WaitForSingleObject(g_timerThread, 0);
+    if (threadState == WAIT_TIMEOUT) return false;
+    if (threadState != WAIT_OBJECT_0) {
+        Wh_Log(L"Timer thread state check failed (%u)", GetLastError());
+        return false;
+    }
+
+    CloseHandle(g_timerThread);
+    g_timerThread = nullptr;
+    CloseWorkerEventHandle(g_timerStopEvent);
+    CloseWorkerEventHandle(g_timerUpdateEvent);
+    return true;
+}
+
+static bool StartTimerThread() {
+    std::lock_guard<std::mutex> lifecycleLock(
+        g_timerThreadLifecycleMtx);
+
+    if (g_unloading.load(std::memory_order_acquire)) return false;
+
+    if (g_timerThread) {
+        DWORD threadState = WaitForSingleObject(g_timerThread, 0);
+        if (threadState == WAIT_TIMEOUT) {
+            HANDLE stopEvent =
+                SnapshotWorkerEventHandle(g_timerStopEvent);
+            bool stopRequested = stopEvent &&
+                WaitForSingleObject(stopEvent, 0) == WAIT_OBJECT_0;
+            return !stopRequested;
+        }
+        if (!ReapStoppedTimerThreadLocked()) return false;
+    }
+
     bool stopEventCreated =
         CreateWorkerEventHandle(g_timerStopEvent, true, false);
     bool updateEventCreated =
@@ -8459,20 +8753,24 @@ static void StartTimerThread() {
     if (!stopEventCreated || !updateEventCreated) {
         CloseWorkerEventHandle(g_timerStopEvent);
         CloseWorkerEventHandle(g_timerUpdateEvent);
-        return;
+        return false;
     }
 
-    g_timerThread    = CreateThread(nullptr, 0, TimerThreadProc, nullptr, 0, nullptr);
+    g_timerThread =
+        CreateThread(nullptr, 0, TimerThreadProc, nullptr, 0, nullptr);
     if (!g_timerThread) {
         CloseWorkerEventHandle(g_timerStopEvent);
         CloseWorkerEventHandle(g_timerUpdateEvent);
-        return;
+        return false;
     }
 
     StartDiscordPresenceThread();
+    return true;
 }
 static bool StopTimerThread(bool shutdownCleanup = false,
                             bool cleanupScrollTimer = true) {
+    std::lock_guard<std::mutex> lifecycleLock(
+        g_timerThreadLifecycleMtx);
     bool discordStopped = StopDiscordPresenceThread(shutdownCleanup);
     SignalWorkerEventHandle(g_timerStopEvent);
     DWORD timerThreadId =
@@ -8482,12 +8780,13 @@ static bool StopTimerThread(bool shutdownCleanup = false,
     bool timerStopped = true;
     constexpr DWORD timeoutMs = 5000;
     if (g_timerThread) {
-        timerStopped = WaitForThreadExit(g_timerThread, timeoutMs);
+        timerStopped = WaitForThreadExitWithComCancellation(
+            g_timerThread, g_timerThreadId, timeoutMs);
         if (!timerStopped) {
             if (shutdownCleanup) {
                 Wh_Log(
-                    L"Timer thread exceeded the unload deadline; retaining "
-                    L"the module if it remains active");
+                    L"Timer thread exceeded the unload deadline; "
+                    L"continuing after bounded cleanup");
             } else {
                 Wh_Log(
                     L"Timer thread didn't stop within the "
@@ -9736,16 +10035,25 @@ static bool g_quickRebuildWorkerRunning = false;
 static bool g_quickRebuildNeedsMonitorMove = false;
 
 static bool AcquireSettingsApplyGateForFullApply() {
-    while (!g_unloading) {
+    const ULONGLONG deadline = GetTickCount64() + 10000;
+    while (!g_unloading.load(std::memory_order_acquire)) {
         bool expected = false;
         if (g_applyingSettings.compare_exchange_weak(
                 expected, true, std::memory_order_acq_rel)) {
             return true;
         }
 
+        if (GetTickCount64() >= deadline) {
+            Wh_Log(
+                L"Wh_ModSettingsChanged: timed out waiting for an earlier "
+                L"settings rebuild to finish; leaving the current settings "
+                L"active so Explorer remains responsive");
+            return false;
+        }
+
         // A quick rebuild can be synchronously dispatching to this very UI
         // thread. Pump sent messages while waiting so the owner can finish and
-        // release the gate instead of timing out or deadlocking.
+        // release the gate instead of deadlocking.
         MsgWaitForMultipleObjectsEx(
             0, nullptr, 25, QS_SENDMESSAGE, MWMO_INPUTAVAILABLE);
         MSG message{};
@@ -14531,10 +14839,11 @@ static bool ShouldHidePlayer() {
     if (!hide && g_hiddenByIdle.load(std::memory_order_relaxed)) hide = true;
 
     if (!hide) {
-        bool hasMedia = false, hasSession = false;
+        bool hasMedia = false, isPlaying = false, hasSession = false;
         {
             std::lock_guard<std::mutex> lock(g_mediaMtx);
             hasMedia = g_media.hasMedia;
+            isPlaying = g_media.isPlaying;
         }
         {
             std::lock_guard<std::mutex> lock(g_sessionMtx);
@@ -14554,7 +14863,7 @@ static bool ShouldHidePlayer() {
                 } else {
                     hide = true;
                 }
-            } else if (!hasMedia) {
+            } else if (!hasMedia && !isPlaying) {
                 auto now = std::chrono::steady_clock::now();
                 auto elapsed =
                     std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -14876,6 +15185,38 @@ static bool HookTaskbarDllSymbols() {
         h, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks));
 }
 
+static void ResetAsyncProducerStateForWorkerRestart() {
+    g_mediaPropertiesFetchActive.store(false, std::memory_order_release);
+    g_mediaPropertiesFetchPending.store(false, std::memory_order_release);
+    g_playbackInfoFetchActive.store(false, std::memory_order_release);
+    g_playbackInfoFetchPending.store(false, std::memory_order_release);
+
+    {
+        std::lock_guard<std::mutex> lock(g_pendingMediaCommandsMtx);
+        g_pendingMediaCommands.clear();
+        g_mediaCommandWorkerRunning = false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_pendingVolumeSetMtx);
+        g_pendingVolumeSetApp.clear();
+        g_pendingVolumeSetPercent = 0;
+        ++g_pendingVolumeSetGeneration;
+        g_volumeSetWorkerRunning = false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_pendingVolumeAdjustMtx);
+        g_pendingVolumeAdjustApp.clear();
+        g_pendingVolumeAdjustSteps = 0;
+        g_volumeAdjustWorkerRunning = false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_quickRebuildMtx);
+        ++g_quickRebuildGeneration;
+        g_quickRebuildWorkerRunning = false;
+        g_quickRebuildNeedsMonitorMove = false;
+    }
+}
+
 static bool HasOutstandingExecutableCallbacks() {
     if (g_taskbarStartInProgress.load(std::memory_order_acquire) ||
         g_taskbarOriginalsInProgress.load(std::memory_order_acquire) ||
@@ -14920,8 +15261,7 @@ static bool HasOutstandingExecutableCallbacks() {
     ReleaseSRWLockExclusive(&g_windowDispatchActivityLock);
     if (dispatchActive) return true;
 
-    if ((g_discordPresenceThread &&
-         WaitForSingleObject(g_discordPresenceThread, 0) == WAIT_TIMEOUT) ||
+    if (IsDiscordPresenceThreadRunning() ||
         (g_mediaThread &&
          WaitForSingleObject(g_mediaThread, 0) == WAIT_TIMEOUT) ||
         (g_timerThread &&
@@ -14957,36 +15297,6 @@ static BOOL ModInitImpl() {
 
     if (!g_primaryVisualState) {
         g_primaryVisualState = std::make_shared<PlayerVisualState>();
-    }
-
-    if (g_moduleSafetyPinned.load(std::memory_order_acquire) ||
-        g_mediaEventUnsubscribeFailed.load(std::memory_order_acquire) ||
-        g_scrollDispatcherTimerRegistered.load() ||
-        g_scrollDispatcherTimerOwnerWindow.load() ||
-        g_scrollDispatcherTimerOwnerThreadId.load() ||
-        g_scrollDispatcherTimerOwnerThreadHandle.load() ||
-        g_playerOwnerWindow.load() ||
-        g_playerOwnerThreadId.load() ||
-        g_playerOwnerThreadHandle.load() ||
-        g_playerGrid || g_injectionParent || g_layoutUpdateToken.value ||
-        g_playerColumn != -1 || g_playerColumnInserted ||
-        g_playerColumnShiftCommitted ||
-        !g_playerColumnShiftedChildren.empty() ||
-        g_trackedElement || g_hasTrackedElementOriginalMargin ||
-        (g_primaryVisualState &&
-         (g_primaryVisualState->xamlCallbacksActive.load(
-              std::memory_order_acquire) ||
-          !g_primaryVisualState->xamlSubscriptionRevokers.empty())) ||
-        !MirrorPlayersEmpty() ||
-        g_volumePopupWindow.load(std::memory_order_acquire) ||
-        g_volumePopupClassRegistered ||
-        g_activeContextMenuOwnerWindow.load() ||
-        g_activeContextMenuOwnerThreadId.load() ||
-        g_activeContextMenuOwnerThreadHandle.load()) {
-        Wh_Log(
-            L"Wh_ModInit: refusing same-process reuse after incomplete "
-            L"callback cleanup; restart Explorer before enabling the mod");
-        return FALSE;
     }
 
     g_unloading = false;
@@ -15028,7 +15338,6 @@ static BOOL ModInitImpl() {
         std::lock_guard<std::mutex> lock(g_asyncTasksMtx);
         g_acceptAsyncTasks = true;
         g_asyncTaskQueue.clear();
-        g_asyncTaskRunning = false;
     }
     {
         std::lock_guard<std::mutex> lock(g_quickRebuildMtx);
@@ -15126,31 +15435,25 @@ static void ModUninitImpl() {
     if (!taskbarStartHooksDrained) {
         Wh_Log(
             L"Wh_ModUninit: TrayUI::StartTaskbar exceeded the unload "
-            L"deadline; retaining the module if the hook remains active");
+            L"deadline; continuing after bounded cleanup");
     }
     PauseAsyncTasks(true);
+    // Producers are paused, so clear every coalescing flag before waiting for
+    // the current worker. A late reaper must not perform this reset after a new
+    // user action has already populated the producer queues.
+    ResetAsyncProducerStateForWorkerRestart();
     CancelAsyncTaskWorkerCall();
-    {
-        std::lock_guard<std::mutex> lock(g_pendingMediaCommandsMtx);
-        g_pendingMediaCommands.clear();
-    }
-    {
-        std::lock_guard<std::mutex> lock(g_pendingVolumeAdjustMtx);
-        g_pendingVolumeAdjustSteps = 0;
-    }
     g_hookInjectionInProgress = false;
     g_taskbarRestartNotBeforeTick = 0;
 
     bool scrollTimerStopped = StopTimerThread(
         true, taskbarStartHooksDrained);
     bool mediaThreadStopped = StopMediaThread(true);
-    bool asyncTasksDrained = WaitForAsyncTasks(5000);
-    bool asyncWorkerStopped = StopAsyncTaskWorker(3000);
-    bool asyncTasksStopped = asyncTasksDrained && asyncWorkerStopped;
+    bool asyncTasksStopped = StopAsyncTaskWorker(6000);
     if (!asyncTasksStopped) {
         Wh_Log(
             L"Wh_ModUninit: serialized background worker exceeded the "
-            L"unload deadline; retaining the module if it remains active");
+            L"unload deadline; continuing after repeated COM cancellation");
     }
     // Existing quick workers were allowed to finish before the final XAML
     // callback drain. This catches a timer registered just before unloading.
@@ -15161,10 +15464,20 @@ static void ModUninitImpl() {
 
     bool contextMenuClosed = taskbarStartHooksDrained &&
         CloseActiveContextMenu(true);
+    if (taskbarStartHooksDrained && !contextMenuClosed) {
+        MsgWaitForMultipleObjectsEx(
+            0, nullptr, 50, QS_SENDMESSAGE, MWMO_INPUTAVAILABLE);
+        contextMenuClosed = CloseActiveContextMenu(true);
+    }
     bool transparencyRestored =
         ApplyTaskbarTransparencyToAll(true, false);
 
     bool popupDestroyed = DestroyVolumePopup(true);
+    if (!popupDestroyed) {
+        MsgWaitForMultipleObjectsEx(
+            0, nullptr, 50, QS_SENDMESSAGE, MWMO_INPUTAVAILABLE);
+        popupDestroyed = DestroyVolumePopup(true);
+    }
     bool popupClassUnregistered =
         popupDestroyed && UnregisterVolumePopupClassConfirmed();
 
@@ -15203,8 +15516,27 @@ static void ModUninitImpl() {
             IsOriginalTaskbarThreadAlive(
                 playerOwnerThreadHandle, playerOwnerThreadId) &&
             playerCleanupWindow) {
-            playerCleanupDispatched = RunFromWindowThreadForCleanup(
-                playerCleanupWindow, cleanupPlayer, &playerCleanup);
+            for (int attempt = 0;
+                 attempt < 2 && !playerCleanup.confirmed;
+                 ++attempt) {
+                PostMessageW(playerCleanupWindow, WM_NULL, 0, 0);
+                bool dispatched = RunFromWindowThreadForCleanup(
+                    playerCleanupWindow, cleanupPlayer, &playerCleanup);
+                playerCleanupDispatched =
+                    playerCleanupDispatched || dispatched;
+                if (!playerCleanup.confirmed && attempt == 0) {
+                    MsgWaitForMultipleObjectsEx(
+                        0, nullptr, 50, QS_SENDMESSAGE,
+                        MWMO_INPUTAVAILABLE);
+                    MSG message{};
+                    while (PeekMessageW(
+                        &message, nullptr, 0, 0,
+                        PM_REMOVE | PM_QS_SENDMESSAGE)) {
+                        TranslateMessage(&message);
+                        DispatchMessageW(&message);
+                    }
+                }
+            }
         } else if (playerOwnerThreadId) {
             Wh_Log(L"Wh_ModUninit: player owner UI thread is unavailable");
         } else {
@@ -15219,18 +15551,18 @@ static void ModUninitImpl() {
     if (!hooksUnregistered) {
         Wh_Log(
             L"Wh_ModUninit: window-dispatch hooks remain after the "
-            L"deadline; retaining the module");
+            L"deadline; continuing after bounded cleanup");
     }
 
     // A callback that entered just before the final unhook can still be
-    // on-stack. A bounded drain avoids hanging Explorer; the emergency module
-    // retention below prevents live code from being unmapped on timeout.
+    // on-stack. Keep the drain bounded so a wedged taskbar UI thread doesn't
+    // make disabling or updating the mod hang Explorer indefinitely.
     bool dispatchActivityIdle =
         WaitForWindowDispatchActivityIdle(3000);
     if (!dispatchActivityIdle) {
         Wh_Log(
             L"Wh_ModUninit: window-dispatch callbacks remain after the "
-            L"deadline; retaining the module");
+            L"deadline; continuing after bounded cleanup");
     }
 
     bool requestsDrained = false;
@@ -15254,7 +15586,7 @@ static void ModUninitImpl() {
         !requestsDrained ||
         HasOutstandingExecutableCallbacks();
     if (executableCallbacksOutstanding) {
-        ReportOutstandingCallbackRisk(
+        LogOutstandingCleanupRisk(
             L"an executable callback, worker, timer, or window procedure remains");
     }
 
@@ -15291,15 +15623,48 @@ void Wh_ModUninit() noexcept {
         Wh_Log(L"Wh_ModUninit: unhandled WinRT failure 0x%08X",
                static_cast<uint32_t>(error.code()));
         if (HasOutstandingExecutableCallbacks()) {
-            ReportOutstandingCallbackRisk(
+            LogOutstandingCleanupRisk(
                 L"cleanup exception left an executable callback active");
         }
     } catch (...) {
         Wh_Log(L"Wh_ModUninit: unhandled cleanup exception");
         if (HasOutstandingExecutableCallbacks()) {
-            ReportOutstandingCallbackRisk(
+            LogOutstandingCleanupRisk(
                 L"cleanup exception left an executable callback active");
         }
+    }
+}
+
+static void RestoreWorkersAfterSettingsApply() noexcept {
+    g_applyingSettings.store(false, std::memory_order_release);
+    if (g_unloading.load(std::memory_order_acquire)) return;
+
+    try {
+        ResumeAsyncTasks();
+        StartMediaThread();
+        StartTimerThread();
+        EnsureDiscordPresenceThreadRunning();
+        SignalWorkerEventHandle(g_timerUpdateEvent);
+        RequestMediaSessionRefresh();
+    } catch (...) {
+        Wh_Log(
+            L"Wh_ModSettingsChanged: worker recovery failed; "
+            L"the timer will retry available services");
+        try {
+            SignalWorkerEventHandle(g_timerUpdateEvent);
+        } catch (...) {}
+    }
+}
+
+static void ScheduleSettingsRecoveryRebuild() noexcept {
+    g_taskbarXamlCallbacksSuppressed.store(
+        true, std::memory_order_release);
+    try {
+        ScheduleTaskbarRebuildRetry(1000);
+        SignalWorkerEventHandle(g_timerUpdateEvent);
+    } catch (...) {
+        Wh_Log(
+            L"Wh_ModSettingsChanged: couldn't schedule the recovery rebuild");
     }
 }
 
@@ -15317,24 +15682,39 @@ static void ModSettingsChangedImpl() {
         }
     } gateRelease;
 
-    PauseAsyncTasks();
+    PauseAsyncTasks(true);
+    // Reset queued-task producer flags while no producer can enqueue. If the
+    // old worker misses its deadline and is reaped later, that reaper must not
+    // erase state belonging to a newer user action.
+    ResetAsyncProducerStateForWorkerRestart();
     CancelAsyncTaskWorkerCall();
     if (!DestroyVolumePopup()) {
         Wh_Log(
             L"Wh_ModSettingsChanged: volume popup cleanup was deferred");
     }
-    bool scrollTimerStopped = StopTimerThread();
-    bool mediaThreadStopped = StopMediaThread();
-    bool asyncTasksStopped = WaitForAsyncTasks(5000);
-    if (!mediaThreadStopped) {
+
+    // The long-lived media and timer workers read immutable settings snapshots
+    // and don't need to be torn down for every settings save. Keeping them
+    // alive avoids a transient COM delay leaving stop-signalled handles behind.
+    // Only the settings-dependent Discord worker and XAML scroll timer restart.
+    bool discordStopped = StopDiscordPresenceThread();
+    bool scrollTimerStopped = StopScrollTimer();
+    bool asyncTasksStopped = StopAsyncTaskWorker(6000);
+    if (!discordStopped) {
         Wh_Log(
-            L"Wh_ModSettingsChanged: media worker cleanup exceeded the "
-            L"settings-change deadline; continuing without hanging Explorer");
+            L"Wh_ModSettingsChanged: Discord worker is still stopping; "
+            L"the timer worker will reap and restart it");
+    }
+    if (!scrollTimerStopped) {
+        Wh_Log(
+            L"Wh_ModSettingsChanged: scroll timer cleanup was delayed; "
+            L"the rebuild will retry cleanup");
     }
     if (!asyncTasksStopped) {
         Wh_Log(
             L"Wh_ModSettingsChanged: background tasks exceeded the "
-            L"settings-change deadline; continuing without hanging Explorer");
+            L"settings-change deadline; producer startup will retry after "
+            L"the old worker exits");
     }
 
     // Values selected from the compact context menu are persistent overrides
@@ -15350,18 +15730,24 @@ static void ModSettingsChangedImpl() {
     Wh_SetStringValue(L"quickPreferredMediaApp", L"");
 
     LoadSettings();
-    bool rebuilt = scrollTimerStopped && ApplyQuickMonitorRebuild();
+
+    // Always attempt the rebuild. StopTimerThread used to combine Discord,
+    // timer-thread and scroll-timer results into one flag, so an unrelated
+    // teardown delay could suppress ApplyQuickMonitorRebuild entirely.
+    bool rebuilt = ApplyQuickMonitorRebuild();
     if (!rebuilt) {
         Wh_Log(
-            L"Wh_ModSettingsChanged: lifecycle-safe taskbar rebuild was deferred");
+            L"Wh_ModSettingsChanged: immediate taskbar rebuild was deferred; "
+            L"a timer-thread retry was scheduled");
+        ScheduleTaskbarRebuildRetry(500);
+        SignalWorkerEventHandle(g_timerUpdateEvent);
     }
 
-    ResumeAsyncTasks();
-    g_applyingSettings.store(false, std::memory_order_release);
+    // Restore producer acceptance and all settings-dependent workers through
+    // one routine which is also used by the exception path below. This keeps a
+    // failed settings rebuild from leaving the mod permanently paused.
     gateRelease.active = false;
-    StartMediaThread();
-    StartTimerThread();
-    RequestMediaSessionRefresh();
+    RestoreWorkersAfterSettingsApply();
 }
 
 void Wh_ModSettingsChanged() noexcept {
@@ -15370,19 +15756,11 @@ void Wh_ModSettingsChanged() noexcept {
     } catch (const winrt::hresult_error& error) {
         Wh_Log(L"Wh_ModSettingsChanged: unhandled WinRT failure 0x%08X",
                static_cast<uint32_t>(error.code()));
-        g_applyingSettings.store(false, std::memory_order_release);
-        g_taskbarXamlCallbacksSuppressed.store(
-            true, std::memory_order_release);
-        g_taskbarRestartNotBeforeTick.store(
-            std::numeric_limits<ULONGLONG>::max(),
-            std::memory_order_release);
+        ScheduleSettingsRecoveryRebuild();
+        RestoreWorkersAfterSettingsApply();
     } catch (...) {
         Wh_Log(L"Wh_ModSettingsChanged: unhandled settings-change exception");
-        g_applyingSettings.store(false, std::memory_order_release);
-        g_taskbarXamlCallbacksSuppressed.store(
-            true, std::memory_order_release);
-        g_taskbarRestartNotBeforeTick.store(
-            std::numeric_limits<ULONGLONG>::max(),
-            std::memory_order_release);
+        ScheduleSettingsRecoveryRebuild();
+        RestoreWorkersAfterSettingsApply();
     }
 }
