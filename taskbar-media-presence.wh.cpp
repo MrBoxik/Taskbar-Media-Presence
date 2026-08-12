@@ -2589,6 +2589,7 @@ struct MediaState {
     std::wstring      processPath;
     ULONGLONG         processIdentityAttemptTick = 0;
     bool              isPlaying     = false;
+    bool              hasDisplayablePlayback = false;
     bool              playbackStateKnown = false;
     bool              hasMedia      = false;
     int64_t           positionSeconds = 0;
@@ -2607,6 +2608,14 @@ struct MediaState {
 
 static MediaState g_media;
 static std::mutex g_mediaMtx;
+
+static bool IsDisplayablePlaybackStatus(
+    GlobalSystemMediaTransportControlsSessionPlaybackStatus status) {
+    using Status =
+        GlobalSystemMediaTransportControlsSessionPlaybackStatus;
+    return status == Status::Playing || status == Status::Paused ||
+           status == Status::Changing;
+}
 
 // Worker-event slots are read by several producer threads and closed by the
 // settings/unload path. Keep signal/create/close atomic with respect to one
@@ -4205,7 +4214,6 @@ static constexpr wchar_t kProgressFillName[] = L"TaskbarMediaPresence_ProgressFi
 
 static std::atomic<int>  g_idleSeconds{0};
 static std::atomic<bool> g_hiddenByIdle{false};
-static std::chrono::steady_clock::time_point g_lastMediaTime = std::chrono::steady_clock::now();
 
 static void ShowAppVolumeFlyout(FrameworkElement const& target);
 
@@ -6904,8 +6912,11 @@ static void FetchPlaybackInfoAsync() {
                 return;
             }
 
-            bool playing = info.PlaybackStatus() ==
+            auto playbackStatus = info.PlaybackStatus();
+            bool playing = playbackStatus ==
                 GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing;
+            bool displayablePlayback =
+                IsDisplayablePlaybackStatus(playbackStatus);
             bool wasPlaying = false;
             bool controlsAvailable = false;
             bool canPrevious = true;
@@ -6935,6 +6946,7 @@ static void FetchPlaybackInfoAsync() {
                 }
                 wasPlaying = g_media.isPlaying;
                 g_media.isPlaying = playing;
+                g_media.hasDisplayablePlayback = displayablePlayback;
                 if (playing) {
                     g_currentSessionLastPlayingTick.store(
                         GetTickCount64(), std::memory_order_release);
@@ -7055,11 +7067,40 @@ static void DetachCurrentSession() {
         g_media.canRepeat       = true;
         g_media.canSeek         = true;
         g_media.isPlaying       = false;
+        g_media.hasDisplayablePlayback = false;
         g_media.playbackStateKnown = false;
         g_media.positionSeconds = 0;
         g_media.durationSeconds = 0;
         g_media.timelineSampleTick = 0;
     }
+}
+
+static void ClearDetachedMediaState() {
+    // A successful zero-session enumeration is not a track transition. Drop
+    // every visual cached from the old publisher so later polls cannot revive
+    // a placeholder or stale cover while no media session exists.
+    g_mediaTransitionUntilTick = 0;
+    g_metadataRetryUntilTick = 0;
+    g_cachedAppIconSize = -1;
+    std::lock_guard<std::mutex> lock(g_mediaMtx);
+    g_media.title.clear();
+    g_media.artist.clear();
+    g_media.albumTitle.clear();
+    g_media.appUserModelId.clear();
+    g_media.processId = 0;
+    g_media.processPath.clear();
+    g_media.processIdentityAttemptTick = 0;
+    g_media.isPlaying = false;
+    g_media.hasDisplayablePlayback = false;
+    g_media.playbackStateKnown = false;
+    g_media.hasMedia = false;
+    g_media.positionSeconds = 0;
+    g_media.durationSeconds = 0;
+    g_media.timelineSampleTick = 0;
+    g_media.thumbnailBytes.clear();
+    g_media.thumbnailHash = 0;
+    g_media.appIconBytes.clear();
+    g_media.appIconKey.clear();
 }
 
 static GlobalSystemMediaTransportControlsSession PickBestSession() {
@@ -7112,18 +7153,24 @@ static GlobalSystemMediaTransportControlsSession PickBestSession() {
                 auto status = playback.PlaybackStatus();
                 bool playing = status ==
                     GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing;
+                bool displayable = IsDisplayablePlaybackStatus(status);
                 const wchar_t* statusText = playing ? L"Playing" :
                     (status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Paused
                          ? L"Paused"
+                         : (status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Changing
+                                ? L"Changing"
                          : (status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Stopped
                                 ? L"Stopped"
-                                : L"Unknown"));
+                                : L"Inactive")));
                 Wh_Log(L"PickBestSession: Session %d (%s) status: %s",
                        index, appId.c_str(), statusText);
 
-                if (!firstAvailable) firstAvailable = session;
+                // Closed, Opened and Stopped publishers can remain in GSMTC's
+                // list after their application has stopped. They are not media
+                // candidates and must never resurrect the hidden widget.
+                if (displayable && !firstAvailable) firstAvailable = session;
                 if (playing && !firstPlaying) firstPlaying = session;
-                if (currentSession && session == currentSession) {
+                if (displayable && currentSession && session == currentSession) {
                     currentAvailable = session;
                     currentPlaying = playing;
                 }
@@ -7158,8 +7205,8 @@ static GlobalSystemMediaTransportControlsSession PickBestSession() {
             return currentAvailable;
         }
 
-        // Players can briefly report Paused/Stopped between songs. Hold the
-        // current source for a configurable grace period before another active
+        // Paused and Changing remain valid media states. Hold the current
+        // source for a configurable grace period before another playing
         // session is allowed to take over.
         if (currentAvailable) {
             ULONGLONG lastPlayingTick =
@@ -7179,11 +7226,11 @@ static GlobalSystemMediaTransportControlsSession PickBestSession() {
             return firstPlaying;
         }
         if (currentAvailable) {
-            Wh_Log(L"PickBestSession: No player is active; keeping current session");
+            Wh_Log(L"PickBestSession: Keeping paused/changing current session");
             return currentAvailable;
         }
         if (firstAvailable) {
-            Wh_Log(L"PickBestSession: No playing session; selected first available");
+            Wh_Log(L"PickBestSession: Selected paused/changing session");
             return firstAvailable;
         }
 
@@ -7202,11 +7249,8 @@ static GlobalSystemMediaTransportControlsSession PickBestSession() {
 static void AttachToSession(GlobalSystemMediaTransportControlsSession session) {
     if (!session) {
         Wh_Log(L"AttachToSession: No session provided, detaching current session");
-        ArmMediaVisualTransition();
         DetachCurrentSession();
-        // Keep the last stable metadata visible during the short broker/session
-        // transition. ShouldHidePlayer hides it after the grace expires if no
-        // replacement session appears.
+        ClearDetachedMediaState();
         DispatchMediaUpdate();
         return;
     }
@@ -7248,6 +7292,7 @@ static void AttachToSession(GlobalSystemMediaTransportControlsSession session) {
         // session publishes replacements. DetachCurrentSession already reset
         // playback/timeline state, so stale controls cannot act on old media.
         g_media.isPlaying = false;
+        g_media.hasDisplayablePlayback = false;
         g_media.playbackStateKnown = false;
     }
     g_cachedAppIconSize = -1;
@@ -7269,12 +7314,14 @@ static void AttachToSession(GlobalSystemMediaTransportControlsSession session) {
         auto initialPlayback = session.GetPlaybackInfo();
         if (initialPlayback &&
             IsCurrentMediaSession(session, generation)) {
-            bool initialPlaying =
-                initialPlayback.PlaybackStatus() ==
+            auto initialStatus = initialPlayback.PlaybackStatus();
+            bool initialPlaying = initialStatus ==
                 GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing;
             std::lock_guard<std::mutex> lock(g_mediaMtx);
             if (g_sessionGeneration.load() == generation) {
                 g_media.isPlaying = initialPlaying;
+                g_media.hasDisplayablePlayback =
+                    IsDisplayablePlaybackStatus(initialStatus);
                 g_media.playbackStateKnown = true;
                 if (initialPlaying) {
                     g_currentSessionLastPlayingTick.store(
@@ -13925,7 +13972,8 @@ static void RefreshPlayerContentsForGrid(
             try {
                 std::wstring displayTitle = title;
                 if (!hasSession) {
-                    displayTitle = Cfg()->noMediaTitleText;
+                    displayTitle = Cfg()->hideWhenNoMedia
+                        ? L"" : Cfg()->noMediaTitleText;
                 } else if (!hasMedia) {
                     displayTitle.clear();
                 } else if (title.empty()) {
@@ -14019,7 +14067,8 @@ static void RefreshPlayerContentsForGrid(
             try {
                 std::wstring displayArtist = artist;
                 if (!hasSession) {
-                    displayArtist = Cfg()->noMediaArtistText;
+                    displayArtist = Cfg()->hideWhenNoMedia
+                        ? L"" : Cfg()->noMediaArtistText;
                 } else if (!hasMedia) {
                     displayArtist.clear();
                 } else if (artist.empty()) {
@@ -14939,42 +14988,24 @@ static bool ShouldHidePlayer(HWND taskbarWindow) {
     if (!hide && g_hiddenByIdle.load(std::memory_order_relaxed)) hide = true;
 
     if (!hide) {
-        bool hasMedia = false, isPlaying = false, hasSession = false;
+        bool hasMedia = false, hasDisplayablePlayback = false;
+        bool playbackStateKnown = false, hasSession = false;
         {
             std::lock_guard<std::mutex> lock(g_mediaMtx);
             hasMedia = g_media.hasMedia;
-            isPlaying = g_media.isPlaying;
+            hasDisplayablePlayback = g_media.hasDisplayablePlayback;
+            playbackStateKnown = g_media.playbackStateKnown;
         }
         {
             std::lock_guard<std::mutex> lock(g_sessionMtx);
             hasSession = g_currentSession != nullptr;
         }
-        if (hasMedia) {
-            g_lastMediaTime = std::chrono::steady_clock::now();
-        }
-
         if (Cfg()->hideWhenNoMedia) {
-            if (!hasSession) {
-                if (hasMedia && MediaVisualTransitionActive()) {
-                    // A session can be replaced between tracks. Keep the last
-                    // stable visual during the grace instead of collapsing the
-                    // taskbar column and making the widget flash.
-                    g_needsUiUpdate = true;
-                } else {
-                    hide = true;
-                }
-            } else if (!hasMedia && !isPlaying) {
-                auto now = std::chrono::steady_clock::now();
-                auto elapsed =
-                    std::chrono::duration_cast<std::chrono::milliseconds>(
-                        now - g_lastMediaTime)
-                        .count();
-                if (elapsed > 2500) {
-                    hide = true;
-                } else {
-                    g_needsUiUpdate = true;
-                }
-            }
+            // A session object and stale metadata are not enough. Only a
+            // current Playing, Paused or Changing state may occupy taskbar
+            // space. Unknown/Opened/Stopped/Closed states remain collapsed.
+            hide = !hasSession || !hasMedia || !playbackStateKnown ||
+                   !hasDisplayablePlayback;
         }
     }
     return hide;
