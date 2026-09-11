@@ -2099,6 +2099,7 @@ struct MirrorPlayerInstance {
     DWORD ownerThreadId = 0;
     HANDLE ownerThreadHandle = nullptr;
     Grid playerGrid{nullptr};
+    Panel targetPanel{nullptr};
     Grid targetGrid{nullptr};
     int playerColumn = -1;
     bool playerColumnInserted = false;
@@ -12452,22 +12453,45 @@ static Grid BuildPlayerGrid(
 }
 
 struct InjectionTarget {
-    Grid grid;
-    int  insertCol = 0;
+    Panel panel{nullptr};
+    int   insertIndex = 0;
+    bool  insertAsGridColumn = false;
 };
 
-static int RemovePlayerGridChildren(Grid const& targetGrid) {
-    if (!targetGrid) return -1;
+static int RemovePlayerGridChildren(Panel const& targetPanel) {
+    if (!targetPanel) return -1;
 
-    int firstCol = -1;
-    for (int i = (int)targetGrid.Children().Size() - 1; i >= 0; --i) {
-        auto fe = targetGrid.Children().GetAt(i).try_as<FrameworkElement>();
+    int firstIndex = -1;
+    for (int i = (int)targetPanel.Children().Size() - 1; i >= 0; --i) {
+        auto fe = targetPanel.Children().GetAt(i).try_as<FrameworkElement>();
         if (fe && fe.Name() == kGridName) {
-            if (firstCol < 0) firstCol = Grid::GetColumn(fe);
-            try { targetGrid.Children().RemoveAt(i); } catch (...) {}
+            if (firstIndex < 0) firstIndex = i;
+            try { targetPanel.Children().RemoveAt(i); } catch (...) {}
         }
     }
-    return firstCol;
+    return firstIndex;
+}
+
+static int FindPanelChildIndex(
+    Panel const& panel, FrameworkElement const& descendant) {
+    if (!panel || !descendant) return -1;
+
+    FrameworkElement directChild = descendant;
+    while (directChild) {
+        auto parent = VisualTreeHelper::GetParent(directChild);
+        if (!parent) return -1;
+        if (parent == panel) break;
+        directChild = parent.try_as<FrameworkElement>();
+    }
+    if (!directChild) return -1;
+
+    auto children = panel.Children();
+    for (uint32_t index = 0; index < children.Size(); ++index) {
+        if (children.GetAt(index) == directChild) {
+            return static_cast<int>(index);
+        }
+    }
+    return -1;
 }
 
 static void InsertTrackedPlayerColumn(
@@ -12850,10 +12874,55 @@ static double FindSystemTrayLeftEdge(
     }
 }
 
-static FrameworkElement FindTrayElement(FrameworkElement const& trayGrid, FrameworkElement const& root, const wchar_t* name) {
-    auto elem = FindChildByName(trayGrid, name);
+static FrameworkElement FindTrayElement(FrameworkElement const& trayPanel, FrameworkElement const& root, const wchar_t* name) {
+    auto elem = FindChildByName(trayPanel, name);
     if (!elem) elem = FindChildByName(root, name);
     return elem;
+}
+
+static int FindTrayPanelInsertionIndex(
+    Panel const& trayPanel,
+    FrameworkElement const& root,
+    std::wstring_view position) {
+    if (!trayPanel) return -1;
+
+    auto childCount = static_cast<int>(trayPanel.Children().Size());
+    if (position == L"tray_left") return 0;
+    if (position == L"tray_right") return childCount;
+
+    auto indexOf = [&](const wchar_t* name, bool after = false) {
+        auto element = FindTrayElement(trayPanel, root, name);
+        int index = FindPanelChildIndex(trayPanel, element);
+        return index < 0 ? -1 : index + (after ? 1 : 0);
+    };
+
+    if (position == L"tray_before_clock")
+        return indexOf(L"NotificationCenterButton");
+    if (position == L"tray_after_clock")
+        return indexOf(L"ShowDesktopStack");
+    if (position == L"tray_before_omni_left")
+        return indexOf(L"ControlCenterButton");
+    if (position == L"tray_before_omni_right")
+        return indexOf(L"ControlCenterButton", true);
+    if (position == L"tray_language_left")
+        return indexOf(L"NonActivatableStack");
+    if (position == L"tray_language_right")
+        return indexOf(L"NonActivatableStack", true);
+    if (position == L"tray_hidden_icons_left")
+        return indexOf(L"NotifyIconStack");
+    if (position == L"tray_hidden_icons_right")
+        return indexOf(L"NotifyIconStack", true);
+    if (position == L"tray_icons_left")
+        return indexOf(L"NotificationAreaIcons");
+    if (position == L"tray_icons_right")
+        return indexOf(L"NotificationAreaIcons", true);
+    if (position == L"tray_after_showdesktop_left")
+        return indexOf(L"ShowDesktopStack");
+    if (position == L"tray_after_showdesktop_right") {
+        int index = indexOf(L"ShowDesktopStack", true);
+        return index < 0 ? childCount : index;
+    }
+    return -1;
 }
 
 static bool IsStartButtonModActive(FrameworkElement const& root) {
@@ -12898,7 +12967,8 @@ static InjectionTarget ResolveInjectionTarget(
     std::wstring_view position)
 {
     auto trayFrame = FindChildByName(root, L"SystemTrayFrameGrid");
-    if (auto trayGrid = trayFrame ? trayFrame.try_as<Grid>() : nullptr) {
+    if (auto trayPanel = trayFrame ? trayFrame.try_as<Panel>() : nullptr) {
+        if (auto trayGrid = trayPanel.try_as<Grid>()) {
 
         int col = -1;
         if      (position == L"tray_right")
@@ -12963,7 +13033,18 @@ static InjectionTarget ResolveInjectionTarget(
         }
 
         if (col >= 0) {
-            return {trayGrid, col};
+            return {trayPanel, col, true};
+        }
+        }
+
+        // Windows 11 25H2 changed SystemTrayFrameGrid from a Grid to a
+        // StackPanel on some builds. Preserve the same anchor semantics by
+        // inserting at the matching direct-child position instead of relying
+        // on Grid column definitions.
+        int childIndex = FindTrayPanelInsertionIndex(
+            trayPanel, root, position);
+        if (childIndex >= 0) {
+            return {trayPanel, childIndex, false};
         }
     }
 
@@ -12985,11 +13066,11 @@ static InjectionTarget ResolveInjectionTarget(
         if (!rootGrid) {
             auto tf2 = FindChildByName(root, L"SystemTrayFrameGrid");
             if (auto tg2 = tf2 ? tf2.try_as<Grid>() : nullptr)
-                return {tg2, (int)tg2.ColumnDefinitions().Size()};
+                return {tg2, (int)tg2.ColumnDefinitions().Size(), true};
             return {};
         }
 
-        return {rootGrid, -1};
+        return {rootGrid, -1, false};
     }
 
     return {};
@@ -13079,9 +13160,10 @@ static bool RemoveMirrorPlayerOnCurrentThread(
 
     bool playerDetached = !mirror->playerGrid;
     try {
-        if (mirror->targetGrid) {
-            RemovePlayerGridChildren(mirror->targetGrid);
-            if (!RemoveTrackedPlayerColumn(
+        if (mirror->targetPanel) {
+            RemovePlayerGridChildren(mirror->targetPanel);
+            if (mirror->targetGrid &&
+                !RemoveTrackedPlayerColumn(
                     mirror->targetGrid, mirror->playerColumn,
                     mirror->playerColumnInserted,
                     mirror->playerColumnShiftCommitted,
@@ -13091,8 +13173,8 @@ static bool RemoveMirrorPlayerOnCurrentThread(
 
             playerDetached = true;
             for (uint32_t index = 0;
-                 index < mirror->targetGrid.Children().Size(); ++index) {
-                auto child = mirror->targetGrid.Children()
+                 index < mirror->targetPanel.Children().Size(); ++index) {
+                auto child = mirror->targetPanel.Children()
                                  .GetAt(index)
                                  .try_as<FrameworkElement>();
                 if (child && child.Name() == kGridName) {
@@ -13107,6 +13189,7 @@ static bool RemoveMirrorPlayerOnCurrentThread(
     if (!playerDetached) return false;
 
     mirror->playerGrid = nullptr;
+    mirror->targetPanel = nullptr;
     mirror->targetGrid = nullptr;
     mirror->trackedElement = nullptr;
     mirror->playerColumn = -1;
@@ -13125,8 +13208,12 @@ static bool InjectMirrorPlayer(HWND taskbarWindow) {
         auto root = xamlRoot.Content().try_as<FrameworkElement>();
         if (!root) return false;
 
-        auto [targetGrid, insertCol] = ResolveInjectionTarget(root, Cfg()->position);
-        if (!targetGrid) return false;
+        auto injectionTarget = ResolveInjectionTarget(root, Cfg()->position);
+        auto targetPanel = injectionTarget.panel;
+        auto targetGrid = targetPanel ? targetPanel.try_as<Grid>() : nullptr;
+        if (!targetPanel) return false;
+        bool isTrayPanel = targetPanel.Name() == L"SystemTrayFrameGrid";
+        if (!isTrayPanel && !targetGrid) return false;
 
         instance = std::make_shared<MirrorPlayerInstance>();
         instance->taskbarWindow = taskbarWindow;
@@ -13134,6 +13221,7 @@ static bool InjectMirrorPlayer(HWND taskbarWindow) {
         instance->ownerThreadHandle = OpenTaskbarOwnerThreadHandle(
             instance->ownerThreadId);
         if (!instance->ownerThreadHandle) return false;
+        instance->targetPanel = targetPanel;
         instance->targetGrid = targetGrid;
         // Track cleanup ownership before BuildPlayerGrid installs delegates.
         AddMirrorPlayer(instance);
@@ -13146,19 +13234,31 @@ static bool InjectMirrorPlayer(HWND taskbarWindow) {
         }
         ApplyCustomPlayerOffset(instance->playerGrid);
 
-        RemovePlayerGridChildren(targetGrid);
-        bool isTrayGrid = targetGrid.Name() == L"SystemTrayFrameGrid";
-        if (isTrayGrid) {
-            InsertTrackedPlayerColumn(
-                targetGrid, insertCol, instance->playerColumn,
-                instance->playerColumnInserted,
-                instance->playerColumnShiftCommitted,
-                instance->playerColumnShiftedChildren);
+        RemovePlayerGridChildren(targetPanel);
+        if (isTrayPanel) {
             instance->playerGrid.Margin({
                 (double)Cfg()->playerMarginLeft, 0,
                 (double)Cfg()->playerMarginRight, 0});
-            Grid::SetColumn(instance->playerGrid, insertCol);
-            targetGrid.Children().Append(instance->playerGrid);
+            if (injectionTarget.insertAsGridColumn) {
+                if (!targetGrid) return false;
+                InsertTrackedPlayerColumn(
+                    targetGrid, injectionTarget.insertIndex,
+                    instance->playerColumn,
+                    instance->playerColumnInserted,
+                    instance->playerColumnShiftCommitted,
+                    instance->playerColumnShiftedChildren);
+                Grid::SetColumn(
+                    instance->playerGrid, injectionTarget.insertIndex);
+                targetGrid.Children().Append(instance->playerGrid);
+            } else {
+                auto children = targetPanel.Children();
+                int insertIndex = std::clamp(
+                    injectionTarget.insertIndex, 0,
+                    static_cast<int>(children.Size()));
+                children.InsertAt(
+                    static_cast<uint32_t>(insertIndex),
+                    instance->playerGrid);
+            }
         } else {
             bool edgePosition =
                 Cfg()->position == L"taskbar_left_edge" ||
@@ -13397,14 +13497,18 @@ static bool InjectPlayerGrid() {
             }
         }
 
-        auto [targetGrid, insertCol] = ResolveInjectionTarget(root, Cfg()->position);
+        auto injectionTarget = ResolveInjectionTarget(root, Cfg()->position);
+        auto targetPanel = injectionTarget.panel;
+        auto targetGrid = targetPanel ? targetPanel.try_as<Grid>() : nullptr;
 
-        if (!targetGrid) {
+        if (!targetPanel) {
             if (Cfg()->enableTreeDump) {
                 DumpXamlTree(root, 0, 8);
             }
             return false;
         }
+        bool isTrayPanel = targetPanel.Name() == L"SystemTrayFrameGrid";
+        if (!isTrayPanel && !targetGrid) return false;
 
         pendingOwnerThreadHandle =
             OpenTaskbarOwnerThreadHandle(ownerThreadId);
@@ -13428,7 +13532,7 @@ static bool InjectPlayerGrid() {
         // Publish cleanup ownership before the first taskbar-tree mutation.
         // Any later exception can now be rolled back by RemovePlayerGrid.
         g_playerGrid = playerGrid;
-        g_injectionParent = targetGrid;
+        g_injectionParent = targetPanel;
         g_playerColumn = -1;
         g_playerColumnInserted = false;
         g_playerColumnShiftCommitted = false;
@@ -13438,21 +13542,29 @@ static bool InjectPlayerGrid() {
         bool startButtonModActive = IsStartButtonModActive(root);
         (void)startButtonModActive;
 
-        bool isTrayGrid = (targetGrid.Name() == L"SystemTrayFrameGrid");
-        RemovePlayerGridChildren(targetGrid);
-        RemoveAnchorDebugOverlays(targetGrid);
+        RemovePlayerGridChildren(targetPanel);
+        if (targetGrid) RemoveAnchorDebugOverlays(targetGrid);
 
-        if (isTrayGrid) {
-            InsertTrackedPlayerColumn(
-                targetGrid, insertCol, g_playerColumn,
-                g_playerColumnInserted,
-                g_playerColumnShiftCommitted,
-                g_playerColumnShiftedChildren);
-
+        if (isTrayPanel) {
             playerGrid.Margin({(double)Cfg()->playerMarginLeft, 0,
                               (double)Cfg()->playerMarginRight, 0});
-            Grid::SetColumn(playerGrid, insertCol);
-            targetGrid.Children().Append(playerGrid);
+            if (injectionTarget.insertAsGridColumn) {
+                if (!targetGrid) return false;
+                InsertTrackedPlayerColumn(
+                    targetGrid, injectionTarget.insertIndex,
+                    g_playerColumn, g_playerColumnInserted,
+                    g_playerColumnShiftCommitted,
+                    g_playerColumnShiftedChildren);
+                Grid::SetColumn(playerGrid, injectionTarget.insertIndex);
+                targetGrid.Children().Append(playerGrid);
+            } else {
+                auto children = targetPanel.Children();
+                int insertIndex = std::clamp(
+                    injectionTarget.insertIndex, 0,
+                    static_cast<int>(children.Size()));
+                children.InsertAt(
+                    static_cast<uint32_t>(insertIndex), playerGrid);
+            }
         }
         else {
             auto repeater  = FindChildByName(targetGrid, L"TaskbarFrameRepeater");
@@ -13672,14 +13784,14 @@ static bool InjectPlayerGrid() {
             }
             else {
                 InsertTrackedPlayerColumn(
-                    targetGrid, insertCol, g_playerColumn,
+                    targetGrid, injectionTarget.insertIndex, g_playerColumn,
                     g_playerColumnInserted,
                     g_playerColumnShiftCommitted,
                     g_playerColumnShiftedChildren);
 
                 playerGrid.Margin({(double)Cfg()->playerMarginLeft, 0,
                                   (double)Cfg()->playerMarginRight, 0});
-                Grid::SetColumn(playerGrid, insertCol);
+                Grid::SetColumn(playerGrid, injectionTarget.insertIndex);
                 targetGrid.Children().Append(playerGrid);
             }
         }
@@ -13771,16 +13883,22 @@ static bool RemovePlayerGrid(bool shutdownCleanup) {
         return mirrorsClean;
     }
 
+    Panel targetPanel{nullptr};
     Grid targetGrid{nullptr};
     try {
-        targetGrid = g_injectionParent.try_as<Grid>();
+        targetPanel = g_injectionParent.try_as<Panel>();
+        targetGrid = targetPanel ? targetPanel.try_as<Grid>() : nullptr;
     } catch (...) {}
-    if (!targetGrid) {
+    if (!targetPanel) {
         Wh_Log(L"RemovePlayerGrid: injection parent is unavailable");
         return false;
     }
 
     if (g_layoutUpdateToken.value) {
+        if (!targetGrid) {
+            Wh_Log(L"RemovePlayerGrid: layout callback parent is unavailable");
+            return false;
+        }
         try {
             targetGrid.LayoutUpdated(g_layoutUpdateToken);
             g_layoutUpdateToken = {};
@@ -13810,10 +13928,10 @@ static bool RemovePlayerGrid(bool shutdownCleanup) {
     }
 
     try {
-        RemoveAnchorDebugOverlays(targetGrid);
-        RemovePlayerGridChildren(targetGrid);
+        if (targetGrid) RemoveAnchorDebugOverlays(targetGrid);
+        RemovePlayerGridChildren(targetPanel);
 
-        if (!RemoveTrackedPlayerColumn(
+        if (targetGrid && !RemoveTrackedPlayerColumn(
                 targetGrid, g_playerColumn,
                 g_playerColumnInserted,
                 g_playerColumnShiftCommitted,
@@ -13822,8 +13940,8 @@ static bool RemovePlayerGrid(bool shutdownCleanup) {
             return false;
         }
 
-        for (uint32_t i = 0; i < targetGrid.Children().Size(); ++i) {
-            auto child = targetGrid.Children()
+        for (uint32_t i = 0; i < targetPanel.Children().Size(); ++i) {
+            auto child = targetPanel.Children()
                              .GetAt(i)
                              .try_as<FrameworkElement>();
             if (child && child.Name() == kGridName) {
@@ -13839,6 +13957,9 @@ static bool RemovePlayerGrid(bool shutdownCleanup) {
     g_playerGrid = nullptr;
     g_injectionParent = nullptr;
     g_playerColumn = -1;
+    g_playerColumnInserted = false;
+    g_playerColumnShiftCommitted = false;
+    g_playerColumnShiftedChildren.clear();
     g_playerOwnerWindow = nullptr;
     g_playerOwnerThreadId = 0;
     CloseOwnedThreadHandle(g_playerOwnerThreadHandle);
