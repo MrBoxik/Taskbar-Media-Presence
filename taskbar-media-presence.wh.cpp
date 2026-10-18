@@ -4378,9 +4378,26 @@ static void ExecuteMediaCommandOnWorker(int cmd) {
                     L"Previous-track command");
                 break;
             case 2:
-                WaitForWinrtOperation(
-                    session.TryTogglePlayPauseAsync(), 3000,
-                    L"Play/pause command");
+                try {
+                    auto info = session.GetPlaybackInfo();
+                    auto status = info
+                        ? info.PlaybackStatus()
+                        : GlobalSystemMediaTransportControlsSessionPlaybackStatus::Closed;
+                    if (status ==
+                        GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing) {
+                        WaitForWinrtOperation(
+                            session.TryPauseAsync(), 3000,
+                            L"Pause command");
+                    } else {
+                        WaitForWinrtOperation(
+                            session.TryPlayAsync(), 3000,
+                            L"Play command");
+                    }
+                } catch (...) {
+                    WaitForWinrtOperation(
+                        session.TryTogglePlayPauseAsync(), 3000,
+                        L"Play/pause fallback command");
+                }
                 break;
             case 3:
                 WaitForWinrtOperation(
@@ -5132,6 +5149,8 @@ static bool g_volumePopupClassRegistered = false;
 static constexpr wchar_t kVolumePopupClass[] =
     L"TaskbarMediaPresenceVolumePopup";
 static constexpr UINT kVolumeStateChangedMessage = WM_APP + 0x431;
+static constexpr UINT_PTR kVolumePopupAutoCloseTimerId = 0x4D50;
+static constexpr UINT kVolumePopupAutoCloseDelayMs = 30'000;
 static constexpr int kVolumePopupLogicalWidth = 84;
 static constexpr int kVolumePopupLogicalHeight = 184;
 static constexpr int kVolumeTrackLogicalCenterX = 42;
@@ -5760,6 +5779,16 @@ static bool CloseVolumePopupWindow(HWND window) {
     return true;
 }
 
+static void ResetVolumePopupAutoCloseTimer(HWND window) {
+    if (!window || !IsWindow(window)) return;
+    KillTimer(window, kVolumePopupAutoCloseTimerId);
+    if (!SetTimer(window, kVolumePopupAutoCloseTimerId,
+                  kVolumePopupAutoCloseDelayMs, nullptr)) {
+        Wh_Log(L"Volume popup: couldn't arm auto-close timer (%u)",
+               GetLastError());
+    }
+}
+
 static LRESULT CALLBACK VolumePopupWindowProc(HWND window, UINT message,
                                                WPARAM wParam,
                                                LPARAM lParam) noexcept {
@@ -5795,9 +5824,11 @@ static LRESULT CALLBACK VolumePopupWindowProc(HWND window, UINT message,
             g_volumePopupEnabled =
                 !g_volumePopupAppUserModelId.empty();
             UpdateVolumePopupPercent(volumePercent);
+            ResetVolumePopupAutoCloseTimer(window);
             return 0;
         }
         case WM_LBUTTONDOWN: {
+            ResetVolumePopupAutoCloseTimer(window);
             if (!IsCursorInsideVolumePopup(window)) {
                 CloseVolumePopupWindow(window);
                 return 0;
@@ -5812,12 +5843,16 @@ static LRESULT CALLBACK VolumePopupWindowProc(HWND window, UINT message,
             return 0;
         }
         case WM_MOUSEMOVE:
+            if (IsCursorInsideVolumePopup(window)) {
+                ResetVolumePopupAutoCloseTimer(window);
+            }
             if (g_volumePopupDragging && GetCapture() == window) {
                 SetPopupVolumeFromY(
                     window, static_cast<short>(HIWORD(lParam)));
             }
             return 0;
         case WM_LBUTTONUP:
+            ResetVolumePopupAutoCloseTimer(window);
             if (g_volumePopupDragging) {
                 SetPopupVolumeFromY(
                     window, static_cast<short>(HIWORD(lParam)));
@@ -5838,6 +5873,7 @@ static LRESULT CALLBACK VolumePopupWindowProc(HWND window, UINT message,
             }
             return 0;
         case WM_MOUSEWHEEL:
+            ResetVolumePopupAutoCloseTimer(window);
             if (!IsCursorInsideVolumePopup(window)) {
                 CloseVolumePopupWindow(window);
                 return 0;
@@ -5852,6 +5888,13 @@ static LRESULT CALLBACK VolumePopupWindowProc(HWND window, UINT message,
                     g_volumePopupAppUserModelId, next);
             }
             return 0;
+        case WM_TIMER:
+            if (wParam == kVolumePopupAutoCloseTimerId) {
+                KillTimer(window, kVolumePopupAutoCloseTimerId);
+                CloseVolumePopupWindow(window);
+                return 0;
+            }
+            break;
         case kVolumeStateChangedMessage:
             UpdateVolumePopupPercent(
                 std::clamp(static_cast<int>(wParam), 0, 100));
@@ -5933,6 +5976,7 @@ static LRESULT CALLBACK VolumePopupWindowProc(HWND window, UINT message,
         }
             case WM_NCDESTROY: {
                 g_volumePopupClosing = true;
+                KillTimer(window, kVolumePopupAutoCloseTimerId);
                 if (GetCapture() == window) ReleaseCapture();
                 HWND expected = window;
                 g_volumePopupWindow.compare_exchange_strong(
@@ -5963,6 +6007,7 @@ static LRESULT CALLBACK VolumePopupWindowProc(HWND window, UINT message,
     // handle as well so worker threads cannot post to a recycled window value.
     if (message == WM_NCDESTROY) {
         g_volumePopupClosing = true;
+        KillTimer(window, kVolumePopupAutoCloseTimerId);
         if (GetCapture() == window) ReleaseCapture();
         HWND expected = window;
         g_volumePopupWindow.compare_exchange_strong(
@@ -6067,7 +6112,14 @@ static void ShowAppVolumeFlyout(FrameworkElement const& target) {
         return;
     }
     g_volumePopupAppUserModelId = CurrentMediaAppUserModelId();
-    if (g_volumePopupAppUserModelId.empty()) return;
+    if (g_volumePopupAppUserModelId.empty()) {
+        // Keep the flyout visible even when GSMTC temporarily exposes a
+        // session without an AUMID. The slider is disabled until the next
+        // session poll supplies an identity, but silently returning here made
+        // a click look completely broken after players restarted.
+        Wh_Log(L"Volume popup: current media session has no AUMID; "
+               L"showing a disabled flyout");
+    }
 
     if (!g_modModuleHandle) {
         GetModuleHandleExW(
@@ -6141,7 +6193,21 @@ static void ShowAppVolumeFlyout(FrameworkElement const& target) {
         kVolumePopupClass, L"Media app volume", WS_POPUP,
         x, y, popupWidth, popupHeight, g_taskbarWnd, nullptr,
         g_modModuleHandle, nullptr);
-    if (!popupWindow) return;
+    if (!popupWindow) {
+        DWORD error = GetLastError();
+        Wh_Log(L"Volume popup: owner-window creation failed (%u); "
+               L"retrying without a taskbar owner", error);
+        popupWindow = CreateWindowExW(
+            WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+            kVolumePopupClass, L"Media app volume", WS_POPUP,
+            x, y, popupWidth, popupHeight, nullptr, nullptr,
+            g_modModuleHandle, nullptr);
+    }
+    if (!popupWindow) {
+        Wh_Log(L"Volume popup: creation failed after fallback (%u)",
+               GetLastError());
+        return;
+    }
 
     HWND expectedPopup = nullptr;
     if (!g_volumePopupWindow.compare_exchange_strong(
@@ -8422,6 +8488,7 @@ struct TaskbarTopologyNotificationWindow {
 static DWORD TimerThreadMain() {
     bool lastThemeWasLight = IsSystemLightTheme();
     ULONGLONG nextVolumePollTick = 0;
+    ULONGLONG nextPlaybackPollTick = 0;
     ULONGLONG nextMetadataRetryTick = 0;
     ULONGLONG nextInjectionRetryTick = 0;
     ULONGLONG taskbarTopologyRebuildDueTick = 0;
@@ -8547,6 +8614,24 @@ static DWORD TimerThreadMain() {
             ? (committedOwnerLive ? committedOwnerWindow : nullptr)
             : selectedTaskbar;
         if (!selectedTaskbar && !uiUpdateWindow) continue;
+
+        // Some hardware media keys update the player but do not raise
+        // GSMTC's PlaybackInfoChanged event on Windows 26H2. Keep a small
+        // bounded poll while a session is attached so pause/play state and
+        // progress never remain stale until another key is pressed.
+        if (nowTick >= nextPlaybackPollTick) {
+            bool hasSession = false;
+            {
+                std::lock_guard<std::mutex> lock(g_sessionMtx);
+                hasSession = g_currentSession != nullptr;
+            }
+            if (hasSession) {
+                FetchPlaybackInfoAsync();
+                nextPlaybackPollTick = nowTick + 500;
+            } else {
+                nextPlaybackPollTick = nowTick + 1000;
+            }
+        }
 
         bool externalTransparencyProviderNow =
             HasExternalTaskbarTransparencyProvider();
@@ -13849,6 +13934,35 @@ static bool InjectPlayerGrid() {
     }
 }
 
+static void ClearPrimaryInjectionState() {
+    g_playerGrid = nullptr;
+    g_injectionParent = nullptr;
+    g_layoutUpdateToken = {};
+    g_playerColumn = -1;
+    g_playerColumnInserted = false;
+    g_playerColumnShiftCommitted = false;
+    g_playerColumnShiftedChildren.clear();
+    g_playerOwnerWindow = nullptr;
+    g_playerOwnerThreadId = 0;
+    CloseOwnedThreadHandle(g_playerOwnerThreadHandle);
+    g_trackedElement = nullptr;
+    g_hasTrackedElementOriginalMargin = false;
+    g_trackPosition.clear();
+
+    if (g_primaryVisualState) {
+        g_primaryVisualState->cachedAlbumTitle.clear();
+        g_primaryVisualState->cachedAlbumArtist.clear();
+        g_primaryVisualState->cachedThumbnailBytes.clear();
+        g_primaryVisualState->cachedPaletteHash = 0;
+        g_primaryVisualState->blurBgCache.Invalidate();
+        ResetScrollState(g_primaryVisualState->titleScroll);
+        ResetScrollState(g_primaryVisualState->artistScroll);
+        g_primaryVisualState->scrollCachedTitle.clear();
+        g_primaryVisualState->scrollCachedArtist.clear();
+    }
+    g_cachedAppIconSize = -1;
+}
+
 static bool RemovePlayerGrid(bool shutdownCleanup) {
     bool mirrorsClean = RemoveMirrorPlayers(shutdownCleanup);
 
@@ -13890,8 +14004,15 @@ static bool RemovePlayerGrid(bool shutdownCleanup) {
         targetGrid = targetPanel ? targetPanel.try_as<Grid>() : nullptr;
     } catch (...) {}
     if (!targetPanel) {
-        Wh_Log(L"RemovePlayerGrid: injection parent is unavailable");
-        return false;
+        // The taskbar can destroy the old XAML tree during a fullscreen or
+        // display-mode transition. In that case the injected grid is already
+        // gone, so waiting for normal detachment confirmation leaves stale
+        // state that blocks every later reinjection. Clear the bookkeeping
+        // and let the retry path attach to the new taskbar tree.
+        Wh_Log(L"RemovePlayerGrid: injection parent disappeared; resetting "
+               L"stale widget state");
+        ClearPrimaryInjectionState();
+        return mirrorsClean;
     }
 
     if (g_layoutUpdateToken.value) {
@@ -13954,29 +14075,7 @@ static bool RemovePlayerGrid(bool shutdownCleanup) {
         return false;
     }
 
-    g_playerGrid = nullptr;
-    g_injectionParent = nullptr;
-    g_playerColumn = -1;
-    g_playerColumnInserted = false;
-    g_playerColumnShiftCommitted = false;
-    g_playerColumnShiftedChildren.clear();
-    g_playerOwnerWindow = nullptr;
-    g_playerOwnerThreadId = 0;
-    CloseOwnedThreadHandle(g_playerOwnerThreadHandle);
-    g_trackedElement = nullptr;
-    g_hasTrackedElementOriginalMargin = false;
-    g_trackPosition.clear();
-
-    g_primaryVisualState->cachedAlbumTitle.clear();
-    g_primaryVisualState->cachedAlbumArtist.clear();
-    g_primaryVisualState->cachedThumbnailBytes.clear();
-    g_primaryVisualState->cachedPaletteHash = 0;
-    g_primaryVisualState->blurBgCache.Invalidate();
-    g_cachedAppIconSize = -1;
-    g_primaryVisualState->scrollCachedTitle.clear();
-    g_primaryVisualState->scrollCachedArtist.clear();
-    ResetScrollState(g_primaryVisualState->titleScroll);
-    ResetScrollState(g_primaryVisualState->artistScroll);
+    ClearPrimaryInjectionState();
     return mirrorsClean;
 }
 
@@ -15428,6 +15527,11 @@ static bool HookTaskbarDllSymbols() {
     HMODULE h = LoadLibraryExW(
         L"taskbar.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!h) return false;
+    // These hooks are required to locate the taskbar XAML root. Keep the
+    // lifecycle hook separate: Microsoft has changed/removed StartTaskbar's
+    // public symbol on preview builds while the taskbar host symbols stayed
+    // usable. A missing lifecycle symbol must not prevent the widget itself
+    // from loading.
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
         {{LR"(const CTaskBand::`vftable'{for `ITaskListWndSite'})"},
          &CTaskBand_ITaskListWndSite_vftable},
@@ -15441,12 +15545,23 @@ static bool HookTaskbarDllSymbols() {
          &TaskbarHost_FrameHeight_Original},
         {{LR"(public: void __cdecl std::_Ref_count_base::_Decref(void))"},
          &Std_Ref_Decref_Original},
+    };
+    if (!WindhawkUtils::HookSymbols(
+            h, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks))) {
+        return false;
+    }
+
+    WindhawkUtils::SYMBOL_HOOK lifecycleHooks[] = {
         {{LR"(public: virtual void __cdecl TrayUI::StartTaskbar(void))"},
          &TrayUI_StartTaskbar_Original,
          TrayUI_StartTaskbar_Hook},
     };
-    return WindhawkUtils::HookSymbols(
-        h, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks));
+    if (!WindhawkUtils::HookSymbols(
+            h, lifecycleHooks, ARRAYSIZE(lifecycleHooks))) {
+        Wh_Log(L"HookTaskbarDllSymbols: optional TrayUI::StartTaskbar "
+               L"hook unavailable; continuing with taskbar host hooks");
+    }
+    return true;
 }
 
 static void ResetAsyncProducerStateForWorkerRestart() {
