@@ -2,7 +2,7 @@
 // @id              taskbar-media-presence
 // @name            Taskbar Media Presence
 // @description     Taskbar music controls with adaptive album art, per-app volume, safe multi-monitor placement, and Discord Rich Presence.
-// @version         1.0.26
+// @version         1.0.32
 // @author          MrBoxik
 // @github          https://github.com/MrBoxik
 // @homepage        https://github.com/MrBoxik/Taskbar-Media-Presence
@@ -15,7 +15,7 @@
 
 // ==WindhawkModReadme==
 /*
-# Taskbar Media Presence 1.0.26
+# Taskbar Media Presence 1.0.32
 
 A compact Windows 11 taskbar player for any application that publishes a Windows media session.
 
@@ -26,7 +26,7 @@ A compact Windows 11 taskbar player for any application that publishes a Windows
 - Album art, title, artist, stable clickable playback progress, Shuffle, Repeat, Previous, Play/Pause, Next, and per-app volume.
 - A single optional MusicBee companion adds its Windows media session and exact internal-volume control.
 - Selected-monitor or compatible all-monitor placement with reserved presets and custom overlay anchors.
-- One-way title marquee, ellipsis, and bounce modes.
+- Circular title scrolling, ellipsis, and bounce modes.
 - Transparent widget and optional transparent Windows taskbar. Treat the taskbar option as a convenience setting; do not combine it with a dedicated taskbar background or transparency mod.
 - Context-menu choices persist across Explorer and Windows restarts.
 - Opt-in Discord Rich Presence with playback progress and a configurable static artwork asset.
@@ -163,19 +163,19 @@ Created and maintained by **[MrBoxik](https://github.com/MrBoxik)**. Based on **
     - scrollSpeed: 1
       $name: Scroll speed (1-10)
       $description: Controls how fast the text scrolls. 1 = slowest, 10 = fastest.
-    - scrollPauseDuration: 1000
+    - scrollPauseDuration: 10000
       $name: Pause duration (ms)
-      $description: How long the title remains still before a marquee pass, or at each edge in Bounce mode.
+      $description: Pause at a readable starting position. Marquee always waits at least 10 seconds; Bounce uses this value at each edge.
     - scrollMode: "marquee"
       $name: Scroll mode
-      $description: One-way loop and Bounce use the scrolling toggles above. No movement overrides them and trims overflowing text with an ellipsis.
+      $description: Circular scroll moves right to left, exits fully on the left, and wraps in from the right. Bounce reverses when the end fits. No movement trims overflowing text with an ellipsis.
       $options:
-      - "marquee": "One-way loop (exit left, enter right)"
+      - "marquee": "Circular loop (exit left, enter right)"
       - "ellipsis": "No movement; end with ..."
       - "bounce": "Bounce back and forth"
     - loopGap: 40
       $name: Marquee gap (px)
-      $description: Extra blank distance before the text re-enters from the right in One-way loop mode.
+      $description: Extra distance between the title exiting left and re-entering right in Circular loop mode. The title keeps moving through this gap without pausing.
     - swapTitleArtist: false
       $name: Swap artist name and track title
     - emptyTitleText: "Untitled"
@@ -868,7 +868,7 @@ struct ModSettings {
     bool         enableArtistScrolling = false;
     bool         enableTitleScrolling = true;
     int          scrollSpeed          = 1;
-    int          scrollPauseDuration  = 1000;
+    int          scrollPauseDuration  = 10000;
     std::wstring scrollMode           = L"marquee";
     int          loopGap              = 40;
     std::wstring solidColor           = L"35 35 35";
@@ -1221,7 +1221,7 @@ static void LoadSettings() {
     g_settings.enableArtistScrolling = Wh_GetIntSetting(L"MainSettings.TextAreaSetting.enableArtistScrolling") != 0;
     g_settings.enableTitleScrolling = Wh_GetIntSetting(L"MainSettings.TextAreaSetting.enableTitleScrolling") != 0;
     g_settings.scrollSpeed          = Int(L"MainSettings.TextAreaSetting.scrollSpeed", 1, 10, 1);
-    g_settings.scrollPauseDuration  = Int(L"MainSettings.TextAreaSetting.scrollPauseDuration", 0, 10000, 1000);
+    g_settings.scrollPauseDuration  = Int(L"MainSettings.TextAreaSetting.scrollPauseDuration", 0, 10000, 10000);
     g_settings.scrollMode           = Str(L"MainSettings.TextAreaSetting.scrollMode", L"marquee");
     // "loop" was the name used by earlier builds for the single-copy marquee.
     // Keep existing installations compatible while exposing the clearer name.
@@ -1772,6 +1772,27 @@ static bool QueueAsyncTask(std::function<void()> task) {
     }
     try {
         g_asyncTaskQueue.push_back(std::move(task));
+    } catch (...) {
+        return false;
+    }
+    SetEvent(g_asyncTaskAvailableEvent);
+    return true;
+}
+
+// Playback state is latency-sensitive: media-property and artwork requests
+// can legitimately occupy the worker for seconds (MusicBee's bridge retries
+// are bounded at 2.25 s). Put state reads at the front so a hardware pause is
+// not stuck behind an unrelated metadata operation.
+static bool QueuePlaybackTask(std::function<void()> task) {
+    if (!task || g_unloading) return false;
+    if (!StartAsyncTaskWorker()) return false;
+
+    std::lock_guard<std::mutex> lock(g_asyncTasksMtx);
+    if (!g_acceptAsyncTasks || g_unloading || !g_asyncTaskThread) {
+        return false;
+    }
+    try {
+        g_asyncTaskQueue.push_front(std::move(task));
     } catch (...) {
         return false;
     }
@@ -2611,11 +2632,12 @@ static MediaState g_media;
 static std::mutex g_mediaMtx;
 
 static bool IsDisplayablePlaybackStatus(
-    GlobalSystemMediaTransportControlsSessionPlaybackStatus status) {
+    GlobalSystemMediaTransportControlsSessionPlaybackStatus status,
+    bool keepStopped = false) {
     using Status =
         GlobalSystemMediaTransportControlsSessionPlaybackStatus;
     return status == Status::Playing || status == Status::Paused ||
-           status == Status::Changing;
+           status == Status::Changing || (keepStopped && status == Status::Stopped);
 }
 
 // Worker-event slots are read by several producer threads and closed by the
@@ -4379,6 +4401,12 @@ static void ExecuteMediaCommandOnWorker(int cmd) {
                 break;
             case 2:
                 try {
+                    // Let the publisher resolve the toggle against its actual
+                    // state, even when its GSMTC snapshot lags a hardware key.
+                    auto toggled = WaitForWinrtOperation(
+                        session.TryTogglePlayPauseAsync(), 3000,
+                        L"Play/pause toggle command");
+                    if (toggled.value_or(false)) break;
                     auto info = session.GetPlaybackInfo();
                     auto status = info
                         ? info.PlaybackStatus()
@@ -4494,7 +4522,7 @@ static void SendMediaCommandAsync(int cmd) {
         g_mediaCommandWorkerRunning = true;
     }
 
-    bool queued = QueueAsyncTask([]() {
+    bool queued = QueuePlaybackTask([]() {
         HRESULT apartmentResult =
             CoInitializeEx(nullptr, COINIT_MULTITHREADED);
         while (!g_unloading) {
@@ -5150,6 +5178,7 @@ static constexpr wchar_t kVolumePopupClass[] =
     L"TaskbarMediaPresenceVolumePopup";
 static constexpr UINT kVolumeStateChangedMessage = WM_APP + 0x431;
 static constexpr UINT_PTR kVolumePopupAutoCloseTimerId = 0x4D50;
+static constexpr UINT_PTR kVolumePopupFocusTimerId = 0x4D51;
 static constexpr UINT kVolumePopupAutoCloseDelayMs = 30'000;
 static constexpr int kVolumePopupLogicalWidth = 84;
 static constexpr int kVolumePopupLogicalHeight = 184;
@@ -5160,8 +5189,12 @@ static int g_volumePopupValue = 0;
 static bool g_volumePopupDragging = false;
 static bool g_volumePopupEnabled = false;
 static bool g_volumePopupClosing = false;
+static std::atomic<ULONGLONG> g_volumePopupAutoCloseDeadlineTick{0};
 static std::atomic<int> g_currentVolumePercent{-1};
 static std::atomic<bool> g_currentVolumeMuted{false};
+static std::atomic<ULONGLONG> g_volumeFeedbackUntilTick{0};
+static std::atomic<HWND> g_volumePopupForeground{nullptr};
+static std::atomic<ULONGLONG> g_volumePopupFocusDismissTick{0};
 
 static UINT GetDpiForMonitorWithFallback(HMONITOR monitor) {
     UINT dpiX = 96;
@@ -5675,6 +5708,10 @@ static void AdjustCurrentMediaAppVolumeAsync(int wheelDelta) {
                     percent + steps * 2, 0, 100);
                 changed = SetControllableVolumeForApp(
                     appUserModelId, requestedPercent, bridgeTimeout);
+                if (changed && IsCurrentMediaApp(appUserModelId)) {
+                    g_volumeFeedbackUntilTick.store(GetTickCount64() + 1000);
+                    g_needsUiUpdate = true;
+                }
             }
 
             if (!changed) {
@@ -5769,6 +5806,7 @@ static bool CloseVolumePopupWindow(HWND window) {
     if (g_volumePopupClosing) return false;
 
     g_volumePopupClosing = true;
+    g_volumePopupAutoCloseDeadlineTick.store(0, std::memory_order_release);
     if (GetCapture() == window) {
         ReleaseCapture();
     }
@@ -5781,6 +5819,9 @@ static bool CloseVolumePopupWindow(HWND window) {
 
 static void ResetVolumePopupAutoCloseTimer(HWND window) {
     if (!window || !IsWindow(window)) return;
+    g_volumePopupAutoCloseDeadlineTick.store(
+        GetTickCount64() + kVolumePopupAutoCloseDelayMs,
+        std::memory_order_release);
     KillTimer(window, kVolumePopupAutoCloseTimerId);
     if (!SetTimer(window, kVolumePopupAutoCloseTimerId,
                   kVolumePopupAutoCloseDelayMs, nullptr)) {
@@ -5843,9 +5884,6 @@ static LRESULT CALLBACK VolumePopupWindowProc(HWND window, UINT message,
             return 0;
         }
         case WM_MOUSEMOVE:
-            if (IsCursorInsideVolumePopup(window)) {
-                ResetVolumePopupAutoCloseTimer(window);
-            }
             if (g_volumePopupDragging && GetCapture() == window) {
                 SetPopupVolumeFromY(
                     window, static_cast<short>(HIWORD(lParam)));
@@ -5889,6 +5927,17 @@ static LRESULT CALLBACK VolumePopupWindowProc(HWND window, UINT message,
             }
             return 0;
         case WM_TIMER:
+            if (wParam == kVolumePopupFocusTimerId) {
+                if (GetForegroundWindow() == window) {
+                    g_volumePopupFocusDismissTick = 0;
+                    KillTimer(window, kVolumePopupFocusTimerId);
+                } else if (GetAsyncKeyState(VK_LBUTTON) & 0x8000) {
+                    g_volumePopupFocusDismissTick = GetTickCount64() + 150;
+                } else if (GetTickCount64() >= g_volumePopupFocusDismissTick.load()) {
+                    CloseVolumePopupWindow(window);
+                }
+                return 0;
+            }
             if (wParam == kVolumePopupAutoCloseTimerId) {
                 KillTimer(window, kVolumePopupAutoCloseTimerId);
                 CloseVolumePopupWindow(window);
@@ -5900,7 +5949,22 @@ static LRESULT CALLBACK VolumePopupWindowProc(HWND window, UINT message,
                 std::clamp(static_cast<int>(wParam), 0, 100));
             return 0;
         case WM_MOUSEACTIVATE:
-            return MA_NOACTIVATE;
+            return MA_ACTIVATE;
+        case WM_ACTIVATE:
+            if (LOWORD(wParam) == WA_INACTIVE) {
+                // Activation changes on mouse-down, but XAML Button.Click
+                // runs on mouse-up. Keep the existing popup alive until that
+                // click can toggle it closed instead of creating a new one.
+                g_volumePopupFocusDismissTick = GetTickCount64() + 150;
+                if (!SetTimer(window, kVolumePopupFocusTimerId, 50, nullptr)) {
+                    g_volumePopupFocusDismissTick = 0;
+                    CloseVolumePopupWindow(window);
+                }
+            } else {
+                g_volumePopupFocusDismissTick = 0;
+                KillTimer(window, kVolumePopupFocusTimerId);
+            }
+            return 0;
         case WM_DPICHANGED: {
             UINT dpi = LOWORD(wParam);
             RECT suggested = *reinterpret_cast<RECT*>(lParam);
@@ -5975,7 +6039,11 @@ static LRESULT CALLBACK VolumePopupWindowProc(HWND window, UINT message,
             return 1;
         }
             case WM_NCDESTROY: {
+                g_volumePopupFocusDismissTick = 0;
+                KillTimer(window, kVolumePopupFocusTimerId);
                 g_volumePopupClosing = true;
+                g_volumePopupAutoCloseDeadlineTick.store(
+                    0, std::memory_order_release);
                 KillTimer(window, kVolumePopupAutoCloseTimerId);
                 if (GetCapture() == window) ReleaseCapture();
                 HWND expected = window;
@@ -6006,7 +6074,11 @@ static LRESULT CALLBACK VolumePopupWindowProc(HWND window, UINT message,
     // failure happened while the HWND was being torn down, clear the published
     // handle as well so worker threads cannot post to a recycled window value.
     if (message == WM_NCDESTROY) {
+        g_volumePopupFocusDismissTick = 0;
+        KillTimer(window, kVolumePopupFocusTimerId);
         g_volumePopupClosing = true;
+        g_volumePopupAutoCloseDeadlineTick.store(
+            0, std::memory_order_release);
         KillTimer(window, kVolumePopupAutoCloseTimerId);
         if (GetCapture() == window) ReleaseCapture();
         HWND expected = window;
@@ -6189,7 +6261,7 @@ static void ShowAppVolumeFlyout(FrameworkElement const& target) {
     }
 
     HWND popupWindow = CreateWindowExW(
-        WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+        WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
         kVolumePopupClass, L"Media app volume", WS_POPUP,
         x, y, popupWidth, popupHeight, g_taskbarWnd, nullptr,
         g_modModuleHandle, nullptr);
@@ -6198,7 +6270,7 @@ static void ShowAppVolumeFlyout(FrameworkElement const& target) {
         Wh_Log(L"Volume popup: owner-window creation failed (%u); "
                L"retrying without a taskbar owner", error);
         popupWindow = CreateWindowExW(
-            WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+            WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
             kVolumePopupClass, L"Media app volume", WS_POPUP,
             x, y, popupWidth, popupHeight, nullptr, nullptr,
             g_modModuleHandle, nullptr);
@@ -6225,7 +6297,9 @@ static void ShowAppVolumeFlyout(FrameworkElement const& target) {
     DwmSetWindowAttribute(
         popupWindow, DWMWA_USE_IMMERSIVE_DARK_MODE,
         &useDarkMode, sizeof(useDarkMode));
-    ShowWindow(popupWindow, SW_SHOWNOACTIVATE);
+    ShowWindow(popupWindow, SW_SHOW);
+    SetForegroundWindow(popupWindow);
+    g_volumePopupForeground.store(GetForegroundWindow());
     SetWindowPos(popupWindow, HWND_TOPMOST, x, y, popupWidth, popupHeight,
                  SWP_SHOWWINDOW | SWP_NOACTIVATE);
     // Don't take mouse capture while the XAML Button is still completing its
@@ -6941,7 +7015,7 @@ static void FetchPlaybackInfoAsync() {
         return;
     }
 
-    bool queued = QueueAsyncTask([]() {
+    bool queued = QueuePlaybackTask([]() {
         struct ActiveGuard {
             ~ActiveGuard() {
                 g_playbackInfoFetchActive = false;
@@ -6983,7 +7057,7 @@ static void FetchPlaybackInfoAsync() {
             bool playing = playbackStatus ==
                 GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing;
             bool displayablePlayback =
-                IsDisplayablePlaybackStatus(playbackStatus);
+                IsDisplayablePlaybackStatus(playbackStatus, true);
             bool wasPlaying = false;
             bool controlsAvailable = false;
             bool canPrevious = true;
@@ -7220,7 +7294,10 @@ static GlobalSystemMediaTransportControlsSession PickBestSession() {
                 auto status = playback.PlaybackStatus();
                 bool playing = status ==
                     GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing;
-                bool displayable = IsDisplayablePlaybackStatus(status);
+                // A hardware Stop must leave the selected player resumable.
+                // Do not select abandoned stopped publishers at startup.
+                bool displayable = IsDisplayablePlaybackStatus(
+                    status, currentSession && session == currentSession);
                 const wchar_t* statusText = playing ? L"Playing" :
                     (status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Paused
                          ? L"Paused"
@@ -7388,7 +7465,7 @@ static void AttachToSession(GlobalSystemMediaTransportControlsSession session) {
             if (g_sessionGeneration.load() == generation) {
                 g_media.isPlaying = initialPlaying;
                 g_media.hasDisplayablePlayback =
-                    IsDisplayablePlaybackStatus(initialStatus);
+                    IsDisplayablePlaybackStatus(initialStatus, true);
                 g_media.playbackStateKnown = true;
                 if (initialPlaying) {
                     g_currentSessionLastPlayingTick.store(
@@ -7902,18 +7979,21 @@ static void TickScrollState(TextScrollState& s, int stepPx, int pauseMs, const s
         return;
     }
 
-    double maxOff = s.textWidth - s.viewWidth + 10.0;
+    double maxOff = s.textWidth - s.viewWidth;
     if (maxOff < 0.0) maxOff = 0.0;
 
     if (mode == L"marquee") {
-        // A true single-copy marquee: move only right-to-left until every
-        // character has left the viewport, then restart beyond the right edge.
-        // There is never a reflected/bouncing pass or a duplicated title.
+        // Always move left. Once the trailing edge has passed the viewport,
+        // the whole title is invisible and can wrap to the right. Pause only
+        // when its beginning reaches the readable left-aligned position.
+        double previousOffset = s.offset;
         s.offset -= stepPx;
         if (s.offset <= -s.textWidth) {
             s.offset = s.viewWidth + Cfg()->loopGap;
+        } else if (previousOffset > 0.0 && s.offset <= 0.0) {
+            s.offset = 0.0;
             s.pausing = true;
-            s.pauseTick = pauseMs;
+            s.pauseTick = std::max(10000, pauseMs);
         }
     } else {
 
@@ -8176,7 +8256,9 @@ static void ResetScrollState(TextScrollState& s) {
     s.forward   = true;
     s.active    = false;
     s.pausing  = true;
-    s.pauseTick = Cfg()->scrollPauseDuration;
+    s.pauseTick = Cfg()->scrollMode == L"marquee"
+        ? std::max(10000, Cfg()->scrollPauseDuration)
+        : Cfg()->scrollPauseDuration;
 }
 
 static constexpr wchar_t kTitleScrollViewName[]  = L"TaskbarMediaPresence_TitleScrollView";
@@ -8547,7 +8629,7 @@ static DWORD TimerThreadMain() {
         const DWORD updateIndex = handleCount;
         handles[handleCount++] = updateEvent;
 
-        DWORD waitTimeout = 1000;
+        DWORD waitTimeout = 250;
         HWND waitPopupWindow =
             g_volumePopupWindow.load(std::memory_order_acquire);
         if (waitPopupWindow && IsWindowVisible(waitPopupWindow)) {
@@ -8588,6 +8670,43 @@ static DWORD TimerThreadMain() {
         EnsureDiscordPresenceThreadRunning();
 
         ULONGLONG nowTick = GetTickCount64();
+        ULONGLONG feedbackDeadline = g_volumeFeedbackUntilTick.load();
+        if (feedbackDeadline && nowTick >= feedbackDeadline &&
+            g_volumeFeedbackUntilTick.compare_exchange_strong(feedbackDeadline, 0)) {
+            g_needsUiUpdate = true;
+        }
+
+        // Back up WM_ACTIVATE dismissal in case a shell transition delays
+        // the popup's UI thread. The initial foreground also covers a denied
+        // SetForegroundWindow request.
+        HWND focusPopup = g_volumePopupWindow.load();
+        HWND foreground = GetForegroundWindow();
+        if (focusPopup && !g_volumePopupFocusDismissTick.load() &&
+            foreground && foreground != focusPopup &&
+            foreground != g_volumePopupForeground.load() &&
+            !IsChild(focusPopup, foreground)) {
+            DestroyVolumePopup();
+        }
+
+        // Window timers can be starved while Explorer is servicing a taskbar
+        // transition or a fullscreen game's shell handoff. Enforce the
+        // timeout from the worker as well, so the flyout cannot remain stuck
+        // open merely because WM_TIMER was delayed.
+        ULONGLONG popupDeadline =
+            g_volumePopupAutoCloseDeadlineTick.load(
+                std::memory_order_acquire);
+        HWND popupForDeadline =
+            g_volumePopupWindow.load(std::memory_order_acquire);
+        if (popupForDeadline && popupDeadline && nowTick >= popupDeadline) {
+            if (g_volumePopupAutoCloseDeadlineTick.compare_exchange_strong(
+                    popupDeadline, 0, std::memory_order_acq_rel,
+                    std::memory_order_acquire)) {
+                if (!DestroyVolumePopup()) {
+                    g_volumePopupAutoCloseDeadlineTick.store(
+                        nowTick + 1000, std::memory_order_release);
+                }
+            }
+        }
 
         HWND selectedTaskbar = g_taskbarWnd.load();
         if (!selectedTaskbar || !IsWindow(selectedTaskbar)) {
@@ -8613,7 +8732,6 @@ static DWORD TimerThreadMain() {
         HWND uiUpdateWindow = hasCommittedOwner
             ? (committedOwnerLive ? committedOwnerWindow : nullptr)
             : selectedTaskbar;
-        if (!selectedTaskbar && !uiUpdateWindow) continue;
 
         // Some hardware media keys update the player but do not raise
         // GSMTC's PlaybackInfoChanged event on Windows 26H2. Keep a small
@@ -8627,11 +8745,16 @@ static DWORD TimerThreadMain() {
             }
             if (hasSession) {
                 FetchPlaybackInfoAsync();
-                nextPlaybackPollTick = nowTick + 500;
+                nextPlaybackPollTick = nowTick + 250;
             } else {
                 nextPlaybackPollTick = nowTick + 1000;
             }
         }
+
+        // Keep the media state fresh even during the short periods where the
+        // taskbar HWND is unavailable. The next UI pass will consume the
+        // already-correct state instead of waiting for another key press.
+        if (!selectedTaskbar && !uiUpdateWindow) continue;
 
         bool externalTransparencyProviderNow =
             HasExternalTaskbarTransparencyProvider();
@@ -14258,8 +14381,9 @@ static void RefreshPlayerContentsForGrid(
                                 scroll.offset = 0.0;
                                 scroll.forward = true;
                                 scroll.pausing = true;
-                                scroll.pauseTick =
-                                    Cfg()->scrollPauseDuration;
+                                scroll.pauseTick = Cfg()->scrollMode == L"marquee"
+                                    ? std::max(10000, Cfg()->scrollPauseDuration)
+                                    : Cfg()->scrollPauseDuration;
                             }
                             if (auto cloneFe = FindChildByName(playerGrid, kTitleCloneName)) {
                                 if (auto clone = cloneFe.try_as<TextBlock>()) {
@@ -14353,8 +14477,9 @@ static void RefreshPlayerContentsForGrid(
                                 scroll.offset = 0.0;
                                 scroll.forward = true;
                                 scroll.pausing = true;
-                                scroll.pauseTick =
-                                    Cfg()->scrollPauseDuration;
+                                scroll.pauseTick = Cfg()->scrollMode == L"marquee"
+                                    ? std::max(10000, Cfg()->scrollPauseDuration)
+                                    : Cfg()->scrollPauseDuration;
                             }
                             if (auto cloneFe = FindChildByName(playerGrid, kArtistCloneName)) {
                                 if (auto clone = cloneFe.try_as<TextBlock>()) {
@@ -14443,8 +14568,22 @@ static void RefreshPlayerContentsForGrid(
                 if (auto ct = btn.Content().try_as<TextBlock>()) {
                     int percent = g_currentVolumePercent.load();
                     bool muted = g_currentVolumeMuted.load();
-                    ct.Text(VolumeGlyphForState(
-                        percent < 0 ? 100 : percent, muted));
+                    bool feedback = percent >= 0 &&
+                        GetTickCount64() < g_volumeFeedbackUntilTick.load();
+                    if (feedback) {
+                        ct.FontFamily(FontFamily(L"Segoe UI"));
+                        ct.FontSize(std::min<double>(12.0,
+                            std::max(8.0, (Cfg()->buttonSize - 2.0) / 3.0)));
+                        ct.Text(winrt::hstring(std::to_wstring(percent) + L"%"));
+                    } else {
+                        bool fluent = Cfg()->iconStyle == L"fluent_outline" ||
+                            Cfg()->iconStyle == L"fluent_filled";
+                        ct.FontFamily(FontFamily(fluent
+                            ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets"));
+                        ct.FontSize(Cfg()->buttonIconSize);
+                        ct.Text(VolumeGlyphForState(
+                            percent < 0 ? 100 : percent, muted));
+                    }
                     ct.Foreground(MakeBrush(ButtonColor()));
                     ct.Opacity(1.0);
                 }
