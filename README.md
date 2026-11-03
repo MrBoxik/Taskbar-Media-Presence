@@ -103,6 +103,10 @@ The companion provides metadata, aspect-ratio-preserving artwork, playback state
 
 For non-MusicBee players, volume is controlled through that application's Windows audio session. The mod searches every active output device and matches packaged identities and common Media Player process aliases. An application that separates playback into an unrelated process may expose transport controls without exposing a matchable volume session.
 
+### Limusic volume
+
+Limusic is recognized automatically when Windows reports its source ID as `com.limusic.desktop`. If Limusic appears as `desktop` in the Media source menu, enable **Treat generic desktop as Limusic** under **Behavior > Media source** only if that ID belongs to Limusic on your system. Volume changes require a verified Limusic audio process. The bare `desktop` ID has no volume targeting by default.
+
 ## Positioning
 
 **After applications** follows the last real taskbar button and reserves space on a left-aligned taskbar. On a centered Windows taskbar it avoids moving the centered app group and falls back to the free physical left area when the widget would collide with the tray.

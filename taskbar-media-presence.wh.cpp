@@ -2,7 +2,7 @@
 // @id              taskbar-media-presence
 // @name            Taskbar Media Presence
 // @description     Taskbar music controls with adaptive album art, per-app volume, safe multi-monitor placement, and Discord Rich Presence.
-// @version         1.0.32
+// @version         1.0.33
 // @author          MrBoxik
 // @github          https://github.com/MrBoxik
 // @homepage        https://github.com/MrBoxik/Taskbar-Media-Presence
@@ -15,7 +15,7 @@
 
 // ==WindhawkModReadme==
 /*
-# Taskbar Media Presence 1.0.32
+# Taskbar Media Presence 1.0.33
 
 A compact Windows 11 taskbar player for any application that publishes a Windows media session.
 
@@ -534,6 +534,9 @@ Created and maintained by **[MrBoxik](https://github.com/MrBoxik)**. Based on **
     - preferredApp: ""
       $name: Preferred media application
       $description: Leave empty to follow the actively playing Windows media session. To pin the widget and Discord presence to one player, select it from the widget's right-click Media source menu, or enter its Windows media-session app ID here.
+    - limusicGenericDesktopAlias: false
+      $name: Treat generic desktop as Limusic
+      $description: Enable only if Limusic appears as desktop in the Media source menu. This maps that ambiguous ID to Limusic for volume control and display. Leave off if another player uses that ID.
     - sessionSwitchGraceMs: 1800
       $name: Media-source switching grace (ms)
       $description: Keeps the current player selected through brief stop/pause states during track changes. This also prevents a newly opened browser tab from stealing the widget while the current player is still active.
@@ -887,6 +890,7 @@ struct ModSettings {
     std::wstring artistColor          = L"0 0 0$255 255 255";
     int          artistColorOpacity   = 80;
     std::wstring ignoredProcesses     = L"";
+    bool         limusicGenericDesktopAlias = false;
     bool         enableTreeDump       = false;
     bool         showDebugBorders     = false;
     bool         showLayoutAnchors    = false;
@@ -1411,6 +1415,9 @@ static void LoadSettings() {
         preferredMediaApp = quickPreferredApp;
     }
     StorePreferredMediaApp(preferredMediaApp);
+
+    g_settings.limusicGenericDesktopAlias = Wh_GetIntSetting(
+        L"BehaviorSettings.MediaSourceSettings.limusicGenericDesktopAlias") != 0;
 
     g_settings.hideWhenNoMedia      = Wh_GetIntSetting(L"BehaviorSettings.hideWhenNoMedia")   != 0;
     g_settings.hideFullscreen       = Wh_GetIntSetting(L"BehaviorSettings.hideFullscreen")    != 0;
@@ -4677,6 +4684,17 @@ static bool KnownMediaPlayerProcessAlias(const std::wstring& appLower,
     return false;
 }
 
+static bool IsLimusicSource(const std::wstring& appId, bool allowDesktopAlias) {
+    return _wcsicmp(appId.c_str(), L"com.limusic.desktop") == 0 ||
+           (allowDesktopAlias && _wcsicmp(appId.c_str(), L"desktop") == 0);
+}
+
+static bool IsLimusicAudioExecutable(const std::wstring& path) {
+    const auto filename = path.substr(path.find_last_of(L"\\/") + 1);
+    return _wcsicmp(filename.c_str(), L"limusic-app.exe") == 0 ||
+           _wcsicmp(filename.c_str(), L"limusic.exe") == 0;
+}
+
 static bool AudioSessionMatchesApp(IAudioSessionControl2* sessionControl2,
                                    const std::wstring& appUserModelId) {
     if (!sessionControl2 || appUserModelId.empty() || g_unloading) {
@@ -4684,21 +4702,29 @@ static bool AudioSessionMatchesApp(IAudioSessionControl2* sessionControl2,
     }
 
     const std::wstring appLower = ToLowerCopy(appUserModelId);
+    const bool limusic = IsLimusicSource(appUserModelId, Cfg()->limusicGenericDesktopAlias);
+    // The bare desktop ID cannot identify a process without an explicit alias.
+    if (appLower == L"desktop" && !limusic) return false;
     std::wstring appStem = ToLowerCopy(PathFileStem(appUserModelId));
     if (appStem == L"applicationframehost" || appStem == L"explorer") {
         appStem.clear();
     }
 
     DWORD processId = 0;
-    if (SUCCEEDED(sessionControl2->GetProcessId(&processId)) && processId) {
+    const HRESULT processResult = sessionControl2->GetProcessId(&processId);
+    // A multi-process audio session does not have a unique owner.
+    if (limusic && processResult != S_OK) return false;
+    if (SUCCEEDED(processResult) && processId) {
         HANDLE process = OpenProcess(
             PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
         if (process) {
-            const std::wstring processAumid =
-                ProcessApplicationUserModelId(process);
+            const std::wstring processAumid = limusic
+                ? std::wstring{} : ProcessApplicationUserModelId(process);
             const std::wstring processPath =
                 QueryProcessImagePath(process);
             CloseHandle(process);
+
+            if (limusic) return IsLimusicAudioExecutable(processPath);
 
             if (SamePackagedAppIdentity(appUserModelId, processAumid)) {
                 return true;
@@ -4718,7 +4744,8 @@ static bool AudioSessionMatchesApp(IAudioSessionControl2* sessionControl2,
         }
     }
 
-    if (g_unloading) return false;
+    // Never fall back to fuzzy identifiers when verifying a Limusic process.
+    if (limusic || g_unloading) return false;
 
     // Session identifiers vary between desktop and packaged applications.
     // Accept the complete app identity, or a reasonably long stem delimited as
@@ -5318,6 +5345,9 @@ static std::wstring CurrentMediaAppUserModelId() {
 
 static std::wstring FriendlyMediaAppName(const std::wstring& appUserModelId) {
     if (appUserModelId.empty()) return L"Media app";
+    if (IsLimusicSource(appUserModelId, Cfg()->limusicGenericDesktopAlias)) {
+        return L"Limusic";
+    }
 
     if (ToLowerCopy(appUserModelId).find(L"musicbee") != std::wstring::npos) {
         return L"MusicBee";
