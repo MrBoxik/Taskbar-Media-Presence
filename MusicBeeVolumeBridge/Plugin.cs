@@ -48,12 +48,12 @@ namespace MusicBeePlugin
                 PluginInfoVersion = PluginInfoVersion,
                 Type = PluginType.General,
                 Name = "Taskbar Media Presence",
-                Description = "Publishes MusicBee media controls and lets Taskbar Media Presence control MusicBee's internal volume.",
+                Description = "Publishes MusicBee media controls, volume and playback information for Taskbar Lyrics.",
                 Author = "MrBoxik",
                 TargetApplication = "",
                 VersionMajor = 1,
                 VersionMinor = 0,
-                Revision = 0,
+                Revision = 2,
                 MinInterfaceVersion = MinInterfaceVersion,
                 MinApiRevision = MinApiRevision,
                 ReceiveNotifications = ReceiveNotificationFlags.PlayerEvents,
@@ -419,6 +419,12 @@ namespace MusicBeePlugin
                     {
                         VolumeState state = InvokeOnWorker(ReadVolumeState);
                         WriteSnapshot(writer, true, state);
+                        return;
+                    }
+
+                    if (request.Equals("PLAYBACK", StringComparison.OrdinalIgnoreCase))
+                    {
+                        WriteLyricPlayback(writer, InvokeOnWorker(ReadLyricPlayback));
                         return;
                     }
 

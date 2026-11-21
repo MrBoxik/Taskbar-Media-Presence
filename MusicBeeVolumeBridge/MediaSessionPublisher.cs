@@ -666,6 +666,12 @@ namespace MusicBeePlugin
             return targetPath;
         }
 
+        internal static string LyricIdentity(string value, string file)
+        {
+            string text = NormaliseText(value);
+            return text.Length > 0 || file.Length == 0 ? text : TitleFromLocation(file);
+        }
+
         private static string NormaliseText(string value)
         {
             if (string.IsNullOrWhiteSpace(value))

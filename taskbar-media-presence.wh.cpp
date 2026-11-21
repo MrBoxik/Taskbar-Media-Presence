@@ -2,7 +2,7 @@
 // @id              taskbar-media-presence
 // @name            Taskbar Media Presence
 // @description     Taskbar music controls with adaptive album art, per-app volume, safe multi-monitor placement, and Discord Rich Presence.
-// @version         1.0.33
+// @version         1.0.37
 // @author          MrBoxik
 // @github          https://github.com/MrBoxik
 // @homepage        https://github.com/MrBoxik/Taskbar-Media-Presence
@@ -129,6 +129,25 @@ Created and maintained by **[MrBoxik](https://github.com/MrBoxik)**. Based on **
       $name: Mirror layout
       $description: Album art, text, and buttons will be displayed on the opposite side
     $name: Media player
+
+  - LyricsSetting:
+    - showLyrics: false
+      $name: Show lyrics
+      $description: Show timed lyrics from Verse Lab in available taskbar space.
+    - autoFit: true
+      $name: Automatically fit lyrics
+      $description: Size the strip for the longest line, using the available taskbar space.
+    - widthCap: 340
+      $name: Manual maximum lyric width (DIP)
+    - scalePercent: 100
+      $name: Lyric scale (%)
+    - fontSize: 14
+      $name: Font size (DIP)
+    - fontFamily: "Segoe UI"
+      $name: Font family
+    - bold: true
+      $name: Use bold lyrics
+    $name: Lyrics
 
   - AlbumArtSetting:
     - showAlbumArt: true
@@ -697,6 +716,7 @@ SOFTWARE.
 #include <winrt/Windows.UI.Xaml.h>
 #include <winrt/Windows.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Documents.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/Windows.UI.Xaml.Media.Imaging.h>
 #include <winrt/Windows.UI.Xaml.Shapes.h>
@@ -750,6 +770,13 @@ using namespace winrt::Windows::Media::Control;
 using namespace winrt::Windows::Storage::Streams;
 
 struct ModSettings {
+    bool         showLyrics           = false;
+    int          lyricsWidthCap       = 340;
+    bool         lyricsAutoFit        = true;
+    int          lyricsScalePercent   = 100;
+    int          lyricsFontSize       = 14;
+    std::wstring lyricsFontFamily     = L"Segoe UI";
+    bool         lyricsBold           = true;
     std::wstring taskbarMode         = L"selected";
     int          taskbarNumber        = 1;
     std::wstring positionPreset       = L"apps";
@@ -1107,6 +1134,16 @@ static void LoadSettings() {
 
     g_settings.taskbarMode          = Str(L"MainSettings.PlayerSetting.taskbarMode", L"selected");
     g_settings.taskbarNumber        = Int(L"MainSettings.PlayerSetting.taskbarNumber", 1, 16, 1);
+    g_settings.showLyrics = Wh_GetIntSetting(L"MainSettings.LyricsSetting.showLyrics") != 0;
+    g_settings.lyricsAutoFit = Wh_GetIntSetting(L"MainSettings.LyricsSetting.autoFit") != 0;
+    int lyricWidth = Wh_GetIntSetting(L"MainSettings.LyricsSetting.widthCap");
+    int lyricScale = Wh_GetIntSetting(L"MainSettings.LyricsSetting.scalePercent");
+    int lyricFont = Wh_GetIntSetting(L"MainSettings.LyricsSetting.fontSize");
+    g_settings.lyricsWidthCap = std::clamp(lyricWidth ? lyricWidth : 340, 60, 850);
+    g_settings.lyricsScalePercent = std::clamp(lyricScale ? lyricScale : 100, 50, 200);
+    g_settings.lyricsFontSize = std::clamp(lyricFont ? lyricFont : 14, 8, 32);
+    g_settings.lyricsFontFamily = Str(L"MainSettings.LyricsSetting.fontFamily", L"Segoe UI");
+    g_settings.lyricsBold = Wh_GetIntSetting(L"MainSettings.LyricsSetting.bold") != 0;
     g_settings.positionPreset       = Str(L"MainSettings.PlayerSetting.positionPreset", L"apps");
     g_settings.position             = Str(L"MainSettings.PlayerSetting.position", L"taskbar_after_apps");
     ParseTwoInts(Str(L"MainSettings.PlayerSetting.customOffset", L"0 0"),
@@ -2002,7 +2039,30 @@ struct AlbumPalette {
     winrt::Windows::UI::Color secondary;
 };
 
+static std::atomic<int> g_lyricsQuickToggle{-1};
+
+static bool LyricsEnabled() {
+    int selected = g_lyricsQuickToggle.load(std::memory_order_relaxed);
+    return selected < 0 ? Cfg()->showLyrics : selected != 0;
+}
+
+static void RefreshLyricsExtensions();
+static Brush LyricsBackground();
+
 struct PlayerVisualState {
+    Grid lyricsRoot{nullptr};
+    FrameworkElement lyricsRepeater{nullptr};
+    FrameworkElement lyricsTray{nullptr};
+    Border lyricsPanel{nullptr};
+    ScrollViewer lyricsViewport{nullptr};
+    TextBlock lyricsText{nullptr};
+    Documents::Run lyricsActiveWord{nullptr};
+    std::wstring lyricsLine;
+    int lyricsWordStart = 0;
+    int lyricsWordLength = 0;
+    ULONGLONG lyricsNextLayout = 0;
+    std::wstring lyricsMeasuredLine;
+    double lyricsMeasuredWidth = 0;
     std::wstring cachedAlbumTitle;
     std::wstring cachedAlbumArtist;
     std::vector<BYTE> cachedThumbnailBytes;
@@ -6346,7 +6406,15 @@ static std::wstring TrimCopy(std::wstring value) {
     return value.substr(first, last - first + 1);
 }
 
+static bool IsVerseLabMediaApp(const std::wstring& appUserModelId) {
+    const auto id = ToLowerCopy(appUserModelId);
+    const auto stem = ToLowerCopy(PathFileStem(appUserModelId));
+    return id == L"verselab.desktop" || stem == L"verse lab" ||
+           stem == L"taskbar lyrics" || stem == L"verselab";
+}
+
 static bool IsIgnoredMediaApp(const std::wstring& appUserModelId) {
+    if (IsVerseLabMediaApp(appUserModelId)) return true;
     auto cfg = Cfg();
     const std::wstring ignoredProcesses = cfg->ignoredProcesses;
     if (ignoredProcesses.empty() || appUserModelId.empty()) return false;
@@ -7289,7 +7357,8 @@ static GlobalSystemMediaTransportControlsSession PickBestSession() {
         int sessionCount = sessions.Size();
         Wh_Log(L"PickBestSession: Found %d media sessions", sessionCount);
 
-        std::wstring preferredApp = ToLowerCopy(GetPreferredMediaApp());
+        auto preferredApp = ToLowerCopy(GetPreferredMediaApp());
+        if (IsVerseLabMediaApp(preferredApp)) preferredApp.clear();
         GlobalSystemMediaTransportControlsSession firstAvailable{nullptr};
         GlobalSystemMediaTransportControlsSession firstPlaying{nullptr};
         GlobalSystemMediaTransportControlsSession currentAvailable{nullptr};
@@ -7619,7 +7688,7 @@ static void OnSessionsChanged() {
             if (currentSession) {
                 auto sessions = manager.GetSessions();
                 for (auto const& s : sessions) {
-                    if (s == currentSession) {
+                    if (s == currentSession && !IsIgnoredMediaApp(s.SourceAppUserModelId().c_str())) {
                         currentSessionExists = true;
                         break;
                     }
@@ -8097,6 +8166,8 @@ static void RefreshScrollDispatcherTimerCadence() {
 
     if (HasActiveScrollAnimation()) {
         SetScrollDispatcherTimerInterval(16);
+    } else if (LyricsEnabled()) {
+        SetScrollDispatcherTimerInterval(100);
     } else if (HasActiveProgressAnimation()) {
         SetScrollDispatcherTimerInterval(250);
     } else {
@@ -8134,6 +8205,11 @@ static void ScrollTimerTick(winrt::Windows::Foundation::IInspectable const&,
             g_nextProgressAnimationTick = 0;
         }
 
+        static ULONGLONG nextLyricsTick = 0;
+        if (now >= nextLyricsTick) {
+            RefreshLyricsExtensions();
+            nextLyricsTick = now + 95;
+        }
         RefreshScrollDispatcherTimerCadence();
     } catch (...) {
         Wh_Log(L"Taskbar UI animation timer callback failed");
@@ -9140,6 +9216,8 @@ static void RefreshThemeColorsForGrid(
         return;
     }
     try {
+        if (visualState->lyricsPanel)
+            visualState->lyricsPanel.Background(LyricsBackground());
         auto textClr = TextColor();
         auto artistClr = ArtistColor();
         auto buttonClr = ButtonColor();
@@ -10799,6 +10877,12 @@ static void ShowMediaContextMenu(FrameworkElement const& target) {
                 }));
         }
         menu.Items().Append(sourceMenu);
+        menu.Items().Append(MakeActionContextMenuItem(
+            L"\uE8D2", LyricsEnabled() ? L"Hide lyrics" : L"Show lyrics", []() {
+                g_lyricsQuickToggle.store(LyricsEnabled() ? 0 : 1, std::memory_order_relaxed);
+                RefreshLyricsExtensions();
+                RefreshScrollDispatcherTimerCadence();
+            }));
 
         MenuFlyoutSubItem positionMenu;
         positionMenu.Text(L"Position");
@@ -14250,6 +14334,382 @@ static void ReleasePointerCapturesRecursive(
     } catch (...) {}
 }
 
+
+// The tray worker publishes bounded, UTF-16 snapshots. Explorer never runs the engine.
+struct LyricSnapshot {
+    LONG sequence;
+    ULONG version;
+    ULONGLONG tick;
+    wchar_t title[160];
+    wchar_t artist[160];
+    wchar_t text[512];
+};
+static_assert(sizeof(LyricSnapshot) == 1680);
+
+struct LyricSnapshotWithWord {
+    LyricSnapshot line;
+    int32_t wordStart;
+    int32_t wordLength;
+    wchar_t source[256];
+};
+static_assert(sizeof(LyricSnapshotWithWord) == 2200);
+
+struct LyricSnapshotWithWidth {
+    LyricSnapshotWithWord words;
+    wchar_t longest[512];
+};
+static_assert(sizeof(LyricSnapshotWithWidth) == 3224);
+
+struct TaskbarLyric {
+    std::wstring text;
+    std::wstring longest;
+    int wordStart{};
+    int wordLength{};
+};
+
+static TaskbarLyric ReadTaskbarLyric() {
+    std::wstring title, artist, appId;
+    {
+        std::lock_guard<std::mutex> lock(g_mediaMtx);
+        if (!g_media.hasMedia) return {};
+        title = g_media.title;
+        artist = g_media.artist;
+        appId = g_media.appUserModelId;
+    }
+    if (title.empty() || IsVerseLabMediaApp(appId)) return {};
+    unsigned version = 3;
+    HANDLE mapping = OpenFileMappingW(FILE_MAP_READ, FALSE,
+                                      L"Local\\TaskbarMediaPresence.Lyrics.v3");
+    if (!mapping) {
+        version = 2;
+        mapping = OpenFileMappingW(FILE_MAP_READ, FALSE,
+                                   L"Local\\TaskbarMediaPresence.Lyrics.v2");
+    }
+    if (!mapping && IsMusicBeeAppId(appId)) {
+        version = 1;
+        mapping = OpenFileMappingW(FILE_MAP_READ, FALSE,
+                                   L"Local\\TaskbarMediaPresence.Lyrics.v1");
+    }
+    if (!mapping) return {};
+    const size_t size = version == 3 ? sizeof(LyricSnapshotWithWidth) :
+        version == 2 ? sizeof(LyricSnapshotWithWord) : sizeof(LyricSnapshot);
+    auto view = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, size);
+    LyricSnapshotWithWidth frame{};
+    bool valid = false;
+    if (view) {
+        const auto sequence = reinterpret_cast<const volatile LONG*>(view);
+        LONG before = *sequence;
+        MemoryBarrier();
+        if (!(before & 1)) {
+            std::memcpy(&frame, view, size);
+            MemoryBarrier();
+            valid = before == *sequence;
+        }
+        UnmapViewOfFile(view);
+    }
+    CloseHandle(mapping);
+    auto& snapshot = frame.words;
+    auto& sample = snapshot.line;
+    ULONGLONG now = GetTickCount64();
+    if (!valid || sample.version != version || !sample.tick || sample.tick > now ||
+        now - sample.tick > 2500) return {};
+    sample.title[159] = sample.artist[159] = sample.text[511] = 0;
+    snapshot.source[255] = 0;
+    if (snapshot.source[0] ? CompareStringOrdinal(appId.c_str(), -1, snapshot.source, -1, TRUE) != CSTR_EQUAL
+                           : !IsMusicBeeAppId(appId))
+        return {};
+    if (CompareStringOrdinal(TrimCopy(title).c_str(), -1, sample.title, -1, TRUE) != CSTR_EQUAL ||
+        CompareStringOrdinal(TrimCopy(artist).c_str(), -1, sample.artist, -1, TRUE) != CSTR_EQUAL)
+        return {};
+    frame.longest[511] = 0;
+    TaskbarLyric lyric{sample.text, frame.longest};
+    if (snapshot.wordStart >= 0 && snapshot.wordLength > 0 &&
+        snapshot.wordStart <= static_cast<int>(lyric.text.size()) &&
+        snapshot.wordLength <= static_cast<int>(lyric.text.size()) - snapshot.wordStart) {
+        lyric.wordStart = snapshot.wordStart;
+        lyric.wordLength = snapshot.wordLength;
+    }
+    return lyric;
+}
+
+struct LyricsSpan { double start, end; };
+
+static LyricsSpan ChooseLyricsGap(double rootWidth, LyricsSpan player,
+                                  const std::vector<LyricsSpan>& occupied, double cap) {
+    constexpr double inset = 5.0;
+    constexpr double minimum = 55.0;
+    if (rootWidth <= 0.0 || player.start < 0.0 || player.end > rootWidth ||
+        player.end <= player.start || cap < minimum) return {0.0, 0.0};
+    double left = inset, right = rootWidth - inset;
+    for (auto span : occupied) {
+        // An item can cross the current widget edge during a taskbar layout change.
+        if (span.start < player.start)
+            left = std::max(left, std::min(player.start, span.end) + inset);
+        if (span.end > player.end)
+            right = std::min(right, std::max(player.end, span.start) - inset);
+    }
+    double leftSpace = std::max(0.0, player.start - inset - left);
+    double rightSpace = std::max(0.0, right - player.end - inset);
+    double width = std::min(cap, std::max(leftSpace, rightSpace));
+    if (width < minimum) return {0.0, 0.0};
+    if (rightSpace >= leftSpace) return {player.end + inset, player.end + inset + width};
+    return {player.start - inset - width, player.start - inset};
+}
+
+static bool GetLyricsSpan(FrameworkElement const& element, Grid const& root,
+                          LyricsSpan* span) {
+    if (!element || element.Visibility() != Visibility::Visible ||
+        element.ActualWidth() <= 1.0 || element.ActualHeight() <= 1.0) return false;
+    auto transform = element.TransformToVisual(root);
+    auto bounds = transform.TransformBounds({0, 0,
+        static_cast<float>(element.ActualWidth()), static_cast<float>(element.ActualHeight())});
+    if (!std::isfinite(bounds.X) || !std::isfinite(bounds.Width) || bounds.Width <= 1.0)
+        return false;
+    *span = {bounds.X, bounds.X + bounds.Width};
+    return true;
+}
+
+static void CollectLyricsObstacles(FrameworkElement const& parent, Grid const& root,
+                                    std::vector<LyricsSpan>& occupied, int depth,
+                                    FrameworkElement const& player, bool trayChildren = false) {
+    if (!parent || depth < 0 || parent.Visibility() != Visibility::Visible) return;
+    int count = VisualTreeHelper::GetChildrenCount(parent);
+    for (int i = 0; i < count; i++) {
+        auto child = VisualTreeHelper::GetChild(parent, i).try_as<FrameworkElement>();
+        if (!child || child == player || child.Visibility() != Visibility::Visible) continue;
+        std::wstring type(winrt::get_class_name(child));
+        std::wstring name(child.Name());
+        if (trayChildren || type.find(L"Button") != std::wstring::npos ||
+            type.find(L"TaskList") != std::wstring::npos ||
+            type.find(L"TaskbarExtensionElement") != std::wstring::npos ||
+            name == L"StartButton" || name == L"SearchBoxButton") {
+            LyricsSpan span{};
+            if (GetLyricsSpan(child, root, &span) && span.end - span.start <= 420.0) {
+                occupied.push_back(span);
+                continue;
+            }
+        }
+        CollectLyricsObstacles(child, root, occupied, depth - 1, player);
+    }
+}
+
+static void RemoveLyricsExtension(std::shared_ptr<PlayerVisualState> const& state) {
+    if (!state || !state->lyricsPanel) return;
+    try {
+        if (state->lyricsRoot) {
+            auto children = state->lyricsRoot.Children();
+            uint32_t index{};
+            if (children.IndexOf(state->lyricsPanel, index)) children.RemoveAt(index);
+        }
+    } catch (...) {}
+    state->lyricsText = nullptr;
+    state->lyricsViewport = nullptr;
+    state->lyricsActiveWord = nullptr;
+    state->lyricsLine.clear();
+    state->lyricsMeasuredLine.clear();
+    state->lyricsPanel = nullptr;
+    state->lyricsRoot = nullptr;
+    state->lyricsRepeater = nullptr;
+    state->lyricsTray = nullptr;
+}
+
+static void UpdateLyricText(PlayerVisualState& state, const TaskbarLyric& lyric) {
+    auto line = state.lyricsText;
+    auto viewport = state.lyricsViewport;
+    bool newLine = state.lyricsLine != lyric.text;
+    if (newLine || state.lyricsWordStart != lyric.wordStart || state.lyricsWordLength != lyric.wordLength) {
+        state.lyricsLine = lyric.text;
+        state.lyricsWordStart = lyric.wordStart;
+        state.lyricsWordLength = lyric.wordLength;
+        state.lyricsActiveWord = nullptr;
+        if (newLine) viewport.ChangeView(0.0, nullptr, nullptr, true);
+        if (!lyric.wordLength) {
+            line.Text(winrt::hstring(lyric.text));
+            return;
+        }
+        auto runs = line.Inlines();
+        runs.Clear();
+        auto append = [&](std::wstring_view text, BYTE opacity) {
+            Documents::Run run;
+            run.Text(winrt::hstring(text));
+            run.Foreground(MakeBrush({opacity, 255, 255, 255}));
+            runs.Append(run);
+            return run;
+        };
+        std::wstring_view text = lyric.text;
+        append(text.substr(0, lyric.wordStart), 170);
+        state.lyricsActiveWord = append(text.substr(lyric.wordStart, lyric.wordLength), 255);
+        append(text.substr(lyric.wordStart + lyric.wordLength), 170);
+    }
+    if (state.lyricsActiveWord && viewport.ScrollableWidth() > 0) try {
+        // Recheck after layout so a long line keeps the active word in view.
+        auto start = state.lyricsActiveWord.ContentStart().GetCharacterRect(Documents::LogicalDirection::Forward);
+        auto end = state.lyricsActiveWord.ContentEnd().GetCharacterRect(Documents::LogicalDirection::Backward);
+        double left = std::min(start.X, end.X);
+        double right = std::max(start.X + start.Width, end.X + end.Width);
+        double offset = viewport.HorizontalOffset();
+        double width = viewport.ViewportWidth();
+        if (std::isfinite(left) && std::isfinite(right) && right > left && width > 0 &&
+            (left < offset || right > offset + width)) {
+            double target = std::clamp(left - width * .25, 0.0, viewport.ScrollableWidth());
+            viewport.ChangeView(target, nullptr, nullptr, true);
+        }
+    } catch (...) {} // The text remains visible if this layout has no character rectangles yet.
+}
+
+static Brush LyricsBackground() {
+    return Cfg()->transparentTaskbar ? nullptr : MakeBackgroundBrush();
+}
+
+static void UpdateLyricsExtension(Grid const& player,
+                                  std::shared_ptr<PlayerVisualState> const& state,
+                                  const TaskbarLyric& lyric) {
+    if (!player || !state) return;
+    try {
+        auto hide = [&] {
+            if (state->lyricsPanel) state->lyricsPanel.Visibility(Visibility::Collapsed);
+        };
+        if (lyric.text.empty() || !state->xamlCallbacksActive.load(std::memory_order_acquire) ||
+            player.Visibility() != Visibility::Visible) {
+            hide();
+            return;
+        }
+        const ULONGLONG now = GetTickCount64();
+        if (state->lyricsPanel && state->lyricsPanel.Visibility() == Visibility::Visible &&
+            now < state->lyricsNextLayout) {
+            UpdateLyricText(*state, lyric);
+            return;
+        }
+        if (!state->lyricsRoot) {
+            auto parent = VisualTreeHelper::GetParent(player);
+            for (int depth = 0; parent && depth < 14; depth++, parent = VisualTreeHelper::GetParent(parent)) {
+                auto root = parent.try_as<Grid>();
+                if (!root) continue;
+                auto repeater = FindChildByName(root, L"TaskbarFrameRepeater");
+                auto tray = FindChildByName(root, L"SystemTrayFrameGrid");
+                if (repeater && tray) {
+                    state->lyricsRoot = root;
+                    state->lyricsRepeater = repeater;
+                    state->lyricsTray = tray;
+                    break;
+                }
+            }
+        }
+        auto root = state->lyricsRoot;
+        LyricsSpan widget{}, tray{};
+        if (!root || !GetLyricsSpan(player, root, &widget) ||
+            !GetLyricsSpan(state->lyricsTray, root, &tray)) {
+            hide();
+            return;
+        }
+        std::vector<LyricsSpan> occupied;
+        CollectLyricsObstacles(state->lyricsRepeater, root, occupied, 10, player);
+        if (occupied.empty()) {
+            hide();
+            return;
+        }
+        if (widget.start < tray.end && widget.end > tray.start) {
+            // The right-hand preset puts the player inside the tray itself.
+            // Reserve its siblings, so the tray's leading margin cannot block the app-side gap.
+            size_t appItems = occupied.size();
+            CollectLyricsObstacles(state->lyricsTray, root, occupied, 10, player, true);
+            if (occupied.size() == appItems) {
+                hide();
+                return;
+            }
+        } else {
+            occupied.push_back(tray);
+        }
+        double scale = Cfg()->lyricsScalePercent / 100.0;
+        double cap = Cfg()->lyricsWidthCap;
+        bool autoFit = Cfg()->lyricsAutoFit && !lyric.longest.empty();
+        auto span = ChooseLyricsGap(root.ActualWidth(), widget, occupied,
+                                    autoFit ? root.ActualWidth() : std::min(cap, cap * scale));
+        if (span.end <= span.start) {
+            hide();
+            return;
+        }
+        if (!state->lyricsPanel) {
+            state->lyricsPanel = Border();
+            state->lyricsText = TextBlock();
+            state->lyricsViewport = ScrollViewer();
+            auto panel = state->lyricsPanel;
+            auto line = state->lyricsText;
+            panel.Name(L"TaskbarMediaPresence_LyricsExtension");
+            panel.HorizontalAlignment(HorizontalAlignment::Left);
+            panel.VerticalAlignment(VerticalAlignment::Center);
+            panel.IsHitTestVisible(false);
+            panel.Padding({10, 3, 10, 3});
+            panel.Background(LyricsBackground());
+            panel.CornerRadius({7, 7, 7, 7});
+            line.VerticalAlignment(VerticalAlignment::Center);
+            line.Foreground(MakeBrush({255, 255, 255, 255}));
+            line.TextWrapping(TextWrapping::NoWrap);
+            line.FontSize(std::min(32.0, Cfg()->lyricsFontSize * scale));
+            line.FontFamily(FontFamily(Cfg()->lyricsFontFamily));
+            line.FontWeight(Cfg()->lyricsBold ? winrt::Windows::UI::Text::FontWeights::SemiBold()
+                                            : winrt::Windows::UI::Text::FontWeights::Normal());
+            auto viewport = state->lyricsViewport;
+            viewport.HorizontalScrollMode(ScrollMode::Enabled);
+            viewport.HorizontalScrollBarVisibility(ScrollBarVisibility::Hidden);
+            viewport.VerticalScrollMode(ScrollMode::Disabled);
+            viewport.VerticalScrollBarVisibility(ScrollBarVisibility::Disabled);
+            viewport.Content(line);
+            panel.Child(viewport);
+            Grid::SetColumnSpan(panel, static_cast<int>(std::max(1u, root.ColumnDefinitions().Size())));
+            Canvas::SetZIndex(panel, 1001);
+            root.Children().Append(panel);
+        }
+        auto panel = state->lyricsPanel;
+        auto line = state->lyricsText;
+        double font = std::min(32.0, Cfg()->lyricsFontSize * scale);
+        double width = span.end - span.start;
+        if (autoFit) {
+            constexpr double padding = 22;
+            if (state->lyricsMeasuredLine != lyric.longest) {
+                TextBlock measure;
+                measure.FontFamily(line.FontFamily());
+                measure.FontWeight(line.FontWeight());
+                measure.FontSize(font);
+                measure.Text(winrt::hstring(lyric.longest));
+                measure.TextWrapping(TextWrapping::NoWrap);
+                measure.Measure({100000, 1000});
+                state->lyricsMeasuredWidth = measure.DesiredSize().Width;
+                state->lyricsMeasuredLine = lyric.longest;
+            }
+            if (state->lyricsMeasuredWidth > 0) {
+                double desired = state->lyricsMeasuredWidth + padding;
+                if (desired > width)
+                    font = std::max(std::min(10.0, font), font * (width - padding) / state->lyricsMeasuredWidth);
+                width = std::min(width, std::max(55.0, desired));
+                if (span.end <= widget.start) span.start = span.end - width;
+            }
+        }
+        if (std::abs(line.FontSize() - font) > .05) line.FontSize(font);
+        if (std::abs(panel.Margin().Left - span.start) > .25) panel.Margin({span.start, 0, 0, 0});
+        if (!std::isfinite(panel.Width()) || std::abs(panel.Width() - width) > .25) panel.Width(width);
+        UpdateLyricText(*state, lyric);
+        state->lyricsNextLayout = now + 250;
+        if (panel.Visibility() != Visibility::Visible) panel.Visibility(Visibility::Visible);
+    } catch (...) {
+        RemoveLyricsExtension(state);
+    }
+}
+
+static void RefreshLyricsExtensions() {
+    if (TaskbarXamlCallbacksSuppressed()) return;
+    bool enabled = LyricsEnabled();
+    static bool wasEnabled = false;
+    if (!enabled && !wasEnabled) return;
+    wasEnabled = enabled;
+    auto lyric = enabled ? ReadTaskbarLyric() : TaskbarLyric{};
+    UpdateLyricsExtension(g_playerGrid, g_primaryVisualState, lyric);
+    // The mod only mirrors XAML on compatible taskbars owned by this dispatcher.
+    for (const auto& mirror : SnapshotMirrorPlayers()) {
+        if (mirror && mirror->ownerThreadId == GetCurrentThreadId())
+            UpdateLyricsExtension(mirror->playerGrid, mirror->visualState, lyric);
+    }
+}
 static bool DeactivatePlayerXamlCallbacks(
     Grid const& playerGrid,
     std::shared_ptr<PlayerVisualState> const& visualState) {
@@ -14257,6 +14717,7 @@ static bool DeactivatePlayerXamlCallbacks(
         visualState->xamlCallbacksActive.store(
             false, std::memory_order_release);
     }
+    RemoveLyricsExtension(visualState);
     ReleasePointerCapturesRecursive(playerGrid);
     return RevokePlayerXamlSubscriptions(visualState);
 }
@@ -16300,6 +16761,7 @@ static void ModSettingsChangedImpl() {
 }
 
 void Wh_ModSettingsChanged() noexcept {
+    g_lyricsQuickToggle.store(-1, std::memory_order_relaxed);
     try {
         ModSettingsChangedImpl();
     } catch (const winrt::hresult_error& error) {

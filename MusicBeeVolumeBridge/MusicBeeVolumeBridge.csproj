@@ -30,5 +30,6 @@
       <HintPath>$(WindowsRuntimePath)</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="System.Runtime.Serialization" />
   </ItemGroup>
 </Project>
