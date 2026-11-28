@@ -28,6 +28,7 @@ namespace MusicBeePlugin
         private SerializedWorker _worker;
         private System.Threading.Timer _pollTimer;
         private MediaSessionPublisher _mediaSession;
+        private EmbeddedLyricsPublisher _embeddedLyrics;
         private Thread _serverThread;
         private NamedPipeServerStream _activeServer;
         private CancellationTokenSource _serverCancellation;
@@ -48,12 +49,12 @@ namespace MusicBeePlugin
                 PluginInfoVersion = PluginInfoVersion,
                 Type = PluginType.General,
                 Name = "Taskbar Media Presence",
-                Description = "Publishes MusicBee media controls, volume and playback information for Taskbar Lyrics.",
+                Description = "Publishes MusicBee media controls, volume, playback information and embedded MP3 lyrics.",
                 Author = "MrBoxik",
                 TargetApplication = "",
                 VersionMajor = 1,
                 VersionMinor = 0,
-                Revision = 2,
+                Revision = 3,
                 MinInterfaceVersion = MinInterfaceVersion,
                 MinApiRevision = MinApiRevision,
                 ReceiveNotifications = ReceiveNotificationFlags.PlayerEvents,
@@ -166,6 +167,8 @@ namespace MusicBeePlugin
                 // eventually recovers.
                 worker.Post(() =>
                 {
+                    try { _embeddedLyrics?.Dispose(); } catch { }
+                    _embeddedLyrics = null;
                     try { _mediaSession?.Dispose(); } catch { }
                     _mediaSession = null;
                 });
@@ -195,6 +198,7 @@ namespace MusicBeePlugin
             _artworkDirty = true;
             _startupRetryTicksRemaining = StartupMetadataRetryTicks;
             _mediaSession = new MediaSessionPublisher(_api, PostToWorker);
+            _embeddedLyrics = new EmbeddedLyricsPublisher();
 
             // Try immediately, then keep retrying from the timer. On a cold
             // Windows start MusicBee can notify plugins before its HWND or tags
@@ -227,6 +231,7 @@ namespace MusicBeePlugin
 
                 case NotificationType.TrackChanging:
                     _mediaSession?.SetChanging();
+                    _embeddedLyrics?.Clear();
                     _metadataDirty = true;
                     _artworkDirty = true;
                     _startupRetryTicksRemaining = StartupMetadataRetryTicks;
@@ -242,10 +247,13 @@ namespace MusicBeePlugin
                     break;
 
                 case NotificationType.ShutdownStarted:
+                    _embeddedLyrics?.Clear();
                     return;
             }
 
             RefreshMediaSession();
+            if (type != NotificationType.TrackChanging)
+                RefreshEmbeddedLyrics();
         }
 
         private void PollTimerOnTick(object state)
@@ -264,7 +272,10 @@ namespace MusicBeePlugin
                     try
                     {
                         if (!_closing)
+                        {
                             RefreshMediaSession();
+                            RefreshEmbeddedLyrics();
+                        }
                     }
                     finally
                     {

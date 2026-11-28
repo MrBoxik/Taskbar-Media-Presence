@@ -2,7 +2,7 @@
 // @id              taskbar-media-presence
 // @name            Taskbar Media Presence
 // @description     Taskbar music controls with adaptive album art, per-app volume, safe multi-monitor placement, and Discord Rich Presence.
-// @version         1.0.37
+// @version         1.0.38
 // @author          MrBoxik
 // @github          https://github.com/MrBoxik
 // @homepage        https://github.com/MrBoxik/Taskbar-Media-Presence
@@ -133,7 +133,7 @@ Created and maintained by **[MrBoxik](https://github.com/MrBoxik)**. Based on **
   - LyricsSetting:
     - showLyrics: false
       $name: Show lyrics
-      $description: Show timed lyrics from Verse Lab in available taskbar space.
+      $description: Show embedded MusicBee lyrics or timed lyrics from Verse Lab in available taskbar space.
     - autoFit: true
       $name: Automatically fit lyrics
       $description: Size the strip for the longest line, using the available taskbar space.
@@ -14335,7 +14335,7 @@ static void ReleasePointerCapturesRecursive(
 }
 
 
-// The tray worker publishes bounded, UTF-16 snapshots. Explorer never runs the engine.
+// The MusicBee companion and Verse Lab publish bounded UTF-16 snapshots.
 struct LyricSnapshot {
     LONG sequence;
     ULONG version;
@@ -14367,30 +14367,9 @@ struct TaskbarLyric {
     int wordLength{};
 };
 
-static TaskbarLyric ReadTaskbarLyric() {
-    std::wstring title, artist, appId;
-    {
-        std::lock_guard<std::mutex> lock(g_mediaMtx);
-        if (!g_media.hasMedia) return {};
-        title = g_media.title;
-        artist = g_media.artist;
-        appId = g_media.appUserModelId;
-    }
-    if (title.empty() || IsVerseLabMediaApp(appId)) return {};
-    unsigned version = 3;
-    HANDLE mapping = OpenFileMappingW(FILE_MAP_READ, FALSE,
-                                      L"Local\\TaskbarMediaPresence.Lyrics.v3");
-    if (!mapping) {
-        version = 2;
-        mapping = OpenFileMappingW(FILE_MAP_READ, FALSE,
-                                   L"Local\\TaskbarMediaPresence.Lyrics.v2");
-    }
-    if (!mapping && IsMusicBeeAppId(appId)) {
-        version = 1;
-        mapping = OpenFileMappingW(FILE_MAP_READ, FALSE,
-                                   L"Local\\TaskbarMediaPresence.Lyrics.v1");
-    }
-    if (!mapping) return {};
+static TaskbarLyric ReadLyricMapping(HANDLE mapping, unsigned version,
+                                    const std::wstring& title, const std::wstring& artist,
+                                    const std::wstring& appId) {
     const size_t size = version == 3 ? sizeof(LyricSnapshotWithWidth) :
         version == 2 ? sizeof(LyricSnapshotWithWord) : sizeof(LyricSnapshot);
     auto view = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, size);
@@ -14430,6 +14409,38 @@ static TaskbarLyric ReadTaskbarLyric() {
         lyric.wordLength = snapshot.wordLength;
     }
     return lyric;
+}
+
+static TaskbarLyric ReadTaskbarLyric() {
+    std::wstring title, artist, appId;
+    {
+        std::lock_guard<std::mutex> lock(g_mediaMtx);
+        if (!g_media.hasMedia) return {};
+        title = g_media.title;
+        artist = g_media.artist;
+        appId = g_media.appUserModelId;
+    }
+    if (title.empty() || IsVerseLabMediaApp(appId)) return {};
+    const bool musicBee = IsMusicBeeAppId(appId);
+    if (musicBee) {
+        if (auto embedded = OpenFileMappingW(FILE_MAP_READ, FALSE,
+                L"Local\\TaskbarMediaPresence.MusicBeeLyrics.v3")) {
+            auto lyric = ReadLyricMapping(embedded, 3, title, artist, appId);
+            if (!lyric.text.empty()) return lyric;
+        }
+    }
+    if (auto mapping = OpenFileMappingW(FILE_MAP_READ, FALSE,
+            L"Local\\TaskbarMediaPresence.Lyrics.v3"))
+        return ReadLyricMapping(mapping, 3, title, artist, appId);
+    if (auto mapping = OpenFileMappingW(FILE_MAP_READ, FALSE,
+            L"Local\\TaskbarMediaPresence.Lyrics.v2"))
+        return ReadLyricMapping(mapping, 2, title, artist, appId);
+    if (musicBee) {
+        if (auto mapping = OpenFileMappingW(FILE_MAP_READ, FALSE,
+                L"Local\\TaskbarMediaPresence.Lyrics.v1"))
+            return ReadLyricMapping(mapping, 1, title, artist, appId);
+    }
+    return {};
 }
 
 struct LyricsSpan { double start, end; };

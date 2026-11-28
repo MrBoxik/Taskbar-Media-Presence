@@ -9,6 +9,34 @@ namespace MusicBeePlugin
 {
     public partial class Plugin
     {
+        private void RefreshEmbeddedLyrics()
+        {
+            if (_embeddedLyrics == null)
+                return;
+            try
+            {
+                string file = LocalAudioPath(_api.NowPlaying_GetFileUrl());
+                var state = _api.Player_GetPlayState();
+                if ((state != PlayState.Playing && state != PlayState.Paused) ||
+                    file.StartsWith(@"\\", StringComparison.Ordinal) ||
+                    !string.Equals(Path.GetExtension(file), ".mp3", StringComparison.OrdinalIgnoreCase))
+                {
+                    _embeddedLyrics.Clear();
+                    return;
+                }
+
+                string title = MediaSessionPublisher.LyricIdentity(_api.NowPlaying_GetFileTag(MetaDataType.TrackTitle), file);
+                string artist = MediaSessionPublisher.LyricIdentity(_api.NowPlaying_GetFileTag(MetaDataType.Artist), "");
+                _embeddedLyrics.Update(file, title, artist, _api.Player_GetPosition(),
+                    _api.NowPlaying_GetDuration(), state == PlayState.Playing);
+            }
+            catch (Exception exception)
+            {
+                _embeddedLyrics.Clear();
+                TraceWorkerException(exception);
+            }
+        }
+
         [DataContract]
         private sealed class LyricPlayback
         {

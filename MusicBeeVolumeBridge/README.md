@@ -7,6 +7,7 @@ It provides:
 - title, artist, album, aspect-ratio-preserving artwork, playback state and timeline to Windows;
 - previous, play/pause, next, seek, shuffle and repeat requests from Windows;
 - MusicBee's internal volume and mute through the private local Taskbar Media Presence pipe;
+- embedded timed lyrics from local MP3 files through a separate local snapshot, with word highlighting for embedded enhanced LRC;
 - guarded cold-start retries so an unfinished MusicBee restore is never published as `Untitled`;
 - clean session and temporary-artwork removal when MusicBee closes or disables the plugin.
 

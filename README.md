@@ -73,9 +73,11 @@ Play media and right-click the taskbar widget to configure its:
 
 Open the mod's **Settings** page in Windhawk to access all appearance, playback control, Discord Rich Presence, and troubleshooting options.
 
-## Optional taskbar lyrics with Verse Lab
+## Optional taskbar lyrics
 
-[Verse Lab](https://github.com/MrBoxik/VerseLab) follows Windows media playback, reads embedded lyrics, looks up matching timed lyrics, and can prepare missing lyrics locally. Keep Verse Lab open or running in the tray, then right-click this widget and enable **Show lyrics**. The lyric strip follows the widget’s colors and highlights the current word. **Automatically fit lyrics** uses the longest line and the available space beside the widget. The strip hides when no lyrics are available.
+In MusicBee, install or update the companion DLL and enable **Show lyrics** from the widget’s right-click menu. The companion reads embedded timed lyrics from local MP3s and follows MusicBee’s playback. This works with Verse Lab closed.
+
+Use [Verse Lab](https://github.com/MrBoxik/VerseLab) to find or prepare lyrics and embed them in your files. For other Windows media players, keep Verse Lab running to supply timed lyrics to the widget. The lyric strip follows the widget’s colors and highlights words when word timestamps are available. **Automatically fit lyrics** uses the longest line and the available space beside the widget. The strip hides when no timed lyrics are available.
 
 The updated MusicBee companion also supplies the exact local audio file and upcoming queue, including tracks Auto-DJ has added to Now Playing. Other compatible players supply their playback timeline through Windows media controls.
 
